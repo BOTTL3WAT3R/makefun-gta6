@@ -1,0 +1,9 @@
+# Local handoff output produced when main.ts is run by hand — never committed.
+out/
+
+# Dependency folders, if a tool ever creates them on this machine.
+node_modules/
+
+# Scratch logs and throwaway captures from local play-testing.
+*.log
+.tmp/

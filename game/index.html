@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Hour — Costa Vera</title>
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "./three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="app"></div>
+
+<!-- In-game HUD -->
+<div id="hud" class="hidden">
+  <div id="hud-left">
+    <canvas id="minimap" width="200" height="200"></canvas>
+    <div id="objective"><span id="objective-label">OBJECTIVE</span><span id="objective-text"></span></div>
+  </div>
+  <div id="hud-right">
+    <div id="cash">$0</div>
+    <div id="stars"></div>
+    <div id="radio-name"></div>
+  </div>
+  <div id="hud-bottom-left">
+    <div class="bar-row"><span class="bar-tag">HP</span><div class="bar"><div id="bar-health"></div></div></div>
+    <div class="bar-row"><span class="bar-tag">AR</span><div class="bar"><div id="bar-armor"></div></div></div>
+    <div id="job-progress"></div>
+  </div>
+  <div id="hud-bottom-right">
+    <div id="speed"></div>
+    <div id="vehicle-name"></div>
+  </div>
+  <div id="crosshair"></div>
+  <div id="interact" class="hidden"></div>
+  <div id="banner" class="hidden"><div id="banner-title"></div><div id="banner-sub"></div></div>
+  <div id="dialogue" class="hidden"><span id="dialogue-who"></span><span id="dialogue-text"></span></div>
+  <div id="toast" class="hidden"></div>
+</div>
+
+<!-- Start menu -->
+<div id="menu-start" class="overlay">
+  <div class="panel">
+    <h1>GOLDEN HOUR</h1>
+    <p class="tagline">Costa Vera. One sunset, one briefcase, one way up.</p>
+    <p class="story">You are <b>Nico Ferrer</b>, a nobody with a borrowed scooter and a debt.
+      Fixer <b>Pilar Duarte</b> offers a ladder: run her errands, steal what she points at,
+      out-drive the Policía del Sol, and take the crown job at golden hour —
+      or stay a nobody on the boardwalk forever.</p>
+    <div class="controls">
+      <div><b>W A S D</b> move / drive</div><div><b>Mouse</b> look &nbsp; <b>Click</b> shoot (on foot)</div>
+      <div><b>E</b> enter / steal car, use shop</div><div><b>Shift</b> sprint &nbsp; <b>Space</b> handbrake / hop</div>
+      <div><b>R</b> radio station &nbsp; <b>M</b> mute</div><div><b>P / Esc</b> pause</div>
+    </div>
+    <button id="btn-start">Start — a new life in Costa Vera</button>
+    <button id="btn-continue" class="hidden">Continue — pick up where you left off</button>
+    <p class="fineprint">Progress saves on this machine. Headphones recommended; the radio is procedural.</p>
+  </div>
+</div>
+
+<!-- Pause menu -->
+<div id="menu-pause" class="overlay hidden">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p id="pause-stats"></p>
+    <button id="btn-resume">Back to the streets</button>
+    <button id="btn-restart">Restart story from job one</button>
+  </div>
+</div>
+
+<!-- Busted / wasted -->
+<div id="menu-over" class="overlay hidden">
+  <div class="panel">
+    <h2 id="over-title">BUSTED</h2>
+    <p id="over-text"></p>
+    <button id="btn-respawn">Walk out and keep going</button>
+  </div>
+</div>
+
+<!-- Ending -->
+<div id="menu-end" class="overlay hidden">
+  <div class="panel">
+    <h2>THE GOLDEN HOUR IS YOURS</h2>
+    <p id="end-text"></p>
+    <button id="btn-freeroam">Keep roaming Costa Vera</button>
+  </div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>
