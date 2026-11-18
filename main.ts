@@ -43,8 +43,9 @@ const dossierLimits = {
 };
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, dossierLimits));
 
-// A one-line receipt on the console (never in the output tree, so two runs
-// stay byte-identical): how many game files were handed in, and their size.
+// A one-line receipt on the console (stdout only — never written into the
+// output tree, so two runs of the handoff stay byte-identical): how many
+// game files were handed in, and their size.
 const gameFiles = readdirSync(join(out, 'game'), { recursive: true })
   .filter(f => statSync(join(out, 'game', String(f))).isFile());
 const gameBytes = gameFiles.reduce((n, f) => n + statSync(join(out, 'game', String(f))).size, 0);
