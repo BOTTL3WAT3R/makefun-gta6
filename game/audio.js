@@ -20,7 +20,7 @@ const leadHz = (root, deg) => noteHz(root * 2, SCALE[((deg % 7) + 7) % 7] + 12 *
 export class AudioSys {
   constructor() {
     this.ctx = null; this.muted = false; this.station = 0;
-    this.radioOn = false; this.step = 0; this.nextStepAt = 0;
+    this.radioOn = false; this.seqStep = 0; this.nextStepAt = 0;
     this.heliLevel = 0;
   }
   init() {
@@ -67,7 +67,7 @@ export class AudioSys {
   }
   toggleMute() { this.muted = !this.muted; if (this.master) this.master.gain.value = this.muted ? 0 : 0.55; return this.muted; }
   stationName() { return STATIONS[this.station].name; }
-  nextStation() { this.station = (this.station + 1) % STATIONS.length; this.step = 0; return this.stationName(); }
+  nextStation() { this.station = (this.station + 1) % STATIONS.length; this.seqStep = 0; return this.stationName(); }
   setRadio(on) { this.radioOn = on; if (on) this.nextStepAt = this.ctx ? this.ctx.currentTime + 0.05 : 0; }
   setEngine(on, speedRatio, rpmLoad) {
     if (!this.ctx) return;
@@ -97,8 +97,8 @@ export class AudioSys {
     if (!this.radioOn || this.muted) return;
     const st = STATIONS[this.station], spb = 60 / st.bpm / 2; // eighth notes
     while (this.nextStepAt < this.ctx.currentTime + 0.12) {
-      this.playStep(st, this.step, Math.max(this.nextStepAt, this.ctx.currentTime));
-      this.step = (this.step + 1) % 16; this.nextStepAt += spb;
+      this.playStep(st, this.seqStep, Math.max(this.nextStepAt, this.ctx.currentTime));
+      this.seqStep = (this.seqStep + 1) % 16; this.nextStepAt += spb;
     }
   }
   playStep(st, step, t) {
