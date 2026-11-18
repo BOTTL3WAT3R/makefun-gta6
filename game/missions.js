@@ -1,459 +1,492 @@
-// missions.js — the story of Nico Ferrer: seven jobs for fixer Pilar
-// Duarte, chained from errand boy to the Golden Hour job and the last
-// tide after it, plus the city's side hustle — taxi fares, the boardwalk
-// checkpoint race, the Gran Vuelta city tour, hidden packages — and the
-// three shops. Owns the objective line and the waypoint beam.
+// missions.js — the story of Golden Hour: seven jobs from fixer Pilar
+// Duarte, plus everything else Costa Vera pays for — taxi fares, two
+// checkpoint races, fifteen hidden packages and three working shops.
 
-import * as THREE from 'three';
-import { LOCATIONS, SHOPS } from './world.js';
-import { makeCar } from './vehicles.js';
+import { clamp, headingOf } from './util.js';
+import { LAYOUT } from './world.js';
 import { makePersonMesh } from './people.js';
-import { dist2d, clamp, fmtCash, fmtTime, pick } from './util.js';
 
-const D = (who, text) => ({ who, text });
-const STORY = [
-  {
-    title: 'Primera Marea', sub: 'First Tide — a briefcase by the marina',
-    reward: 250,
-    intro: [D('PILAR (phone)', 'Nico. You owe half the boardwalk money. Work it off: a case waits at the Marina del Sol office. Bring it to my club — and smile for the cameras.'),
-            D('NICO', 'A case. Sure. Nothing ever goes wrong with cases.')],
-    steps: [
-      { kind: 'goto', pos: LOCATIONS.marina, r: 7, label: 'Pick up the case at the Marina del Sol office' },
-      { kind: 'goto', pos: LOCATIONS.club, r: 6, onFoot: true, label: 'Deliver the case to Pilar at Club Brisa' },
-    ],
-    outro: [D('PILAR', 'Clean work. The city pays people who finish. Come back — I have a shopping list.')],
-  },
-  {
-    title: 'Coche Prestado', sub: 'Borrowed Car — the gold Tormenta at Hotel Palma',
-    reward: 400,
-    intro: [D('PILAR (phone)', 'A guest at Hotel Palma parks a gold Tormenta GT with the valet and owes me a fortune. Take the car. Leave the valet his tip and his teeth.'),
-            D('NICO', 'Steal a gold sports car in broad sunset. Subtle.')],
-    steps: [
-      { kind: 'goto', pos: LOCATIONS.hotel, r: 9, label: 'Reach the Hotel Palma valet stand' },
-      { kind: 'steal', label: 'Steal the gold Tormenta GT from the valet' },
-      { kind: 'deliverCar', pos: LOCATIONS.garage, r: 10, label: 'Deliver the Tormenta to Taller Sol' },
-    ],
-    outro: [D('PILAR', 'Beautiful. Word travels: Tormentas are appearing all over the city now. Enjoy.')],
-  },
-  {
-    title: 'La Ronda', sub: 'The Round — three envelopes, one clock',
-    reward: 600, timer: 240,
-    intro: [D('PILAR (phone)', 'Collection round, cariño. Envelopes wait at the clinic, the gun shop and the hotel. On foot at each door, then back to me. The clock is not your friend.')],
-    steps: [
-      { kind: 'goto', pos: LOCATIONS.clinic, r: 5, onFoot: true, label: 'Collect the envelope at Clínica Brisa' },
-      { kind: 'goto', pos: LOCATIONS.gunshop, r: 5, onFoot: true, label: 'Collect the envelope at Armería Faro' },
-      { kind: 'goto', pos: LOCATIONS.hotel, r: 6, onFoot: true, label: 'Collect the envelope at Hotel Palma' },
-      { kind: 'goto', pos: LOCATIONS.club, r: 6, onFoot: true, label: 'Bring the envelopes to Pilar at Club Brisa' },
-    ],
-    outro: [D('PILAR', 'Every door paid. You are becoming expensive to ignore, Nico.')],
-  },
-  {
-    title: 'Pasajero Caliente', sub: 'Hot Passenger — Ivo the accountant wants out',
-    reward: 800,
-    intro: [D('PILAR (phone)', 'Ivo, El Pulpo’s accountant, is done counting other people’s money. He waits at the Faro point parking. The Policía will object. Lose them, then the safehouse on Calle Niebla.')],
-    steps: [
-      { kind: 'pickup', npc: 'ivo', heat: 3, who: 'IVO', line: 'Drive, drive! Half the Policía are behind us!',
-        pos: LOCATIONS.lighthouse, r: 8, label: 'Pick up Ivo at the Faro point parking (in a car)' },
-      { kind: 'escape', label: 'Lose the Policía del Sol — wanted level to zero' },
-      { kind: 'goto', pos: LOCATIONS.safehouse, r: 9, needCar: true, label: 'Deliver Ivo to the safehouse on Calle Niebla' },
-    ],
-    outro: [D('IVO', 'I will tell Pilar everything. The boats, the books, the second books…'),
-            D('PILAR', 'Then El Pulpo’s days are numbered in single digits.')],
-  },
-  {
-    title: 'Pulpo a la Parrilla', sub: 'Grilled Octopus — run Rico Sanz off his throne',
-    reward: 1000,
-    intro: [D('PILAR (phone)', 'Rico “El Pulpo” Sanz cruises downtown in a black Tormenta, counting my money. Introduce his car to every wall in Costa Vera. Then meet me at the yacht.')],
-    steps: [
-      { kind: 'ram', label: 'Wreck El Pulpo’s black Tormenta (ram it until it dies)' },
-      { kind: 'goto', pos: { x: 182, z: 206 }, r: 9, label: 'Meet Pilar at the Marina del Sol pier' },
-    ],
-    outro: [D('EL PULPO (phone)', 'You drive like a weather event, Ferrer! This city was mine!'),
-            D('PILAR', 'Was. One job left, Nico. The Golden Hour job.')],
-  },
-  {
-    title: 'Hora Dorada', sub: 'Golden Hour — the crown case, every cop in the city',
-    reward: 2000,
-    intro: [D('PILAR', 'Inside the club is the crown case — every debt, every deed, the whole city in one box. Take it to my yacht before the light dies. Every patrol in Costa Vera will try to stop you.'),
-            D('NICO', 'Then I drive fast, Pilar. I have been practicing.')],
-    steps: [
-      { kind: 'goto', pos: LOCATIONS.club, r: 6, onFoot: true, label: 'Take the crown case inside Club Brisa' },
-      { kind: 'goto', pos: { x: 182, z: 206 }, r: 10, label: 'Deliver the crown case to the yacht at Marina del Sol', lock: 4 },
-    ],
-    outro: [D('PILAR', 'The case is mine. But a crown has a keeper, Nico — Capitán Vega of the harbour patrol, El Pulpo’s brother, still holds my yacht’s papers. One more tide to swim.')],
-  },
-  {
-    title: 'La Última Marea', sub: 'The Last Tide — Vega, the harbour patrol, and Pilar herself',
-    reward: 3000,
-    intro: [D('PILAR', 'Vega impounds the Reina del Alba at dawn and burns my club’s licence tonight — unless I reach the yacht with the harbour ledger first. I am done sending boys, Nico. Tonight you drive ME. I wait outside the club.'),
-            D('NICO', 'The queen rides shotgun. Vega picked the wrong sunset.')],
-    steps: [
-      { kind: 'pickup', npc: 'pilar', heat: 4, who: 'PILAR', line: 'Vega’s patrol was watching the club. Pity for them. DRIVE.',
-        pos: LOCATIONS.club, r: 8, label: 'Pick up Pilar outside Club Brisa (in a car)' },
-      { kind: 'escape', label: 'Shake Vega’s harbour patrol — wanted level to zero' },
-      { kind: 'goto', pos: { x: 182, z: 206 }, r: 10, needCar: true, lock: 3, label: 'Run the ledger to the yacht at Marina del Sol — Vega will cut you off' },
-    ],
-    outro: [D('VEGA (radio)', 'Stand down, Ferrer! …She is already aboard. Madre mía.'),
-            D('PILAR', 'Papers, yacht, club, crown — all of it, ours. You came to Costa Vera owing money, Nico. You leave the harbour owning it.')],
-  },
-];
-export const STORY_COUNT = STORY.length;
-const RACE_GATES = [
-  { x: 120, z: 160 }, { x: 200, z: 84 }, { x: 124, z: 4 }, { x: 196, z: -76 },
-  { x: 44, z: -156 }, { x: -116, z: -84 }, { x: -196, z: 4 }, { x: -44, z: 84 },
-];
-const RACE_PAR = 150;
-// The Gran Vuelta: a full-city circuit from Faro point, ten gates, the big
-// money — the side activity for drivers who finished the boardwalk sprint.
-const TOUR_GATES = [
-  { x: 124, z: 164 }, { x: 44, z: 84 }, { x: -116, z: 84 }, { x: -204, z: 4 },
-  { x: -124, z: -76 }, { x: -44, z: -156 }, { x: 116, z: -156 }, { x: 204, z: -76 },
-  { x: 124, z: 4 }, { x: 216, z: 120 },
-];
-const TOUR_PAR = 235, TOUR_PRIZE = 750;
+const PILAR_POS = { x: 20, z: 15 };
 
-export class Missions {
-  constructor(scene, world, G) {
-    this.world = world;
-    this.storyIndex = 0; this.active = null; this.dialogueQ = [];
-    this.dialogueAt = 0; this.jobT = 0;
-    // Waypoint beam + ring, moved to whatever the current objective is.
-    this.beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 42, 12, 1, true),
-      new THREE.MeshBasicMaterial({ color: 0xffd94d, transparent: true, opacity: 0.34, depthWrite: false, side: THREE.DoubleSide }));
-    this.beam.position.y = 21; scene.add(this.beam);
-    this.ring = new THREE.Mesh(new THREE.RingGeometry(2.6, 3.4, 26),
-      new THREE.MeshBasicMaterial({ color: 0xffd94d, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
-    this.ring.rotation.x = -Math.PI / 2; this.ring.position.y = 0.12; scene.add(this.ring);
-    // The pickup case prop (marina / club), shown when a step needs it.
-    this.caseMesh = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.24, 0.44),
-      new THREE.MeshStandardMaterial({ color: 0x8a5a2a, emissive: 0xff9a3d, emissiveIntensity: 0.7 }));
-    this.caseMesh.visible = false; scene.add(this.caseMesh);
-    // Hidden packages.
-    this.packages = new Map();
-    const pkgGeo = new THREE.BoxGeometry(0.55, 0.38, 0.55);
-    const pkgMat = new THREE.MeshStandardMaterial({ color: 0x2e8b57, emissive: 0x39ff88, emissiveIntensity: 0.55 });
-    for (const s of world.packageSpots) {
-      const m = new THREE.Mesh(pkgGeo, pkgMat);
-      m.position.set(s.x, 0.7, s.z); scene.add(m);
-      this.packages.set(s.id, { ...s, mesh: m, taken: false });
+const JOBS = [
+  {
+    title: 'First Run', pay: 150,
+    intro: [
+      ['PILAR DUARTE', 'Nico Ferrer. Heard you can drive and keep your mouth shut. Both are rare here.'],
+      ['PILAR DUARTE', 'A cooler is sitting at the end of the marina pier. Bring it back to me. That is the whole job.'],
+    ],
+    steps: [
+      { type: 'dwell', x: -152, z: 300, label: 'Pick up the cooler at the end of the pier' },
+      { type: 'goto', x: PILAR_POS.x, z: PILAR_POS.z, label: 'Bring the cooler back to Pilar' },
+    ],
+  },
+  {
+    title: 'Cold Open', pay: 220,
+    intro: [
+      ['PILAR DUARTE', 'A restaurant on the north-west block ordered ice and silence. Mostly silence.'],
+      ['PILAR DUARTE', 'Pick up at the warehouse, drop it at the beach bar. The clock is rude — move.'],
+    ],
+    steps: [
+      { type: 'dwell', x: -196, z: -120, label: 'Load up at the warehouse' },
+      { type: 'goto', x: 96, z: 186, label: 'Deliver to the beach bar', time: 150 },
+    ],
+  },
+  {
+    title: 'Tail Lights', pay: 300,
+    intro: [
+      ['PILAR DUARTE', 'A courier in a yellow hatch is moving something of mine without permission.'],
+      ['PILAR DUARTE', 'Stay on his tail — close, but do not trade paint. Learn where he stops.'],
+    ],
+    steps: [
+      { type: 'chase', label: 'Tail the yellow courier — stay close, stay unseen' },
+      { type: 'goto', x: -60, z: -170, label: 'Note the drop: the north alley. Now report to Pilar', report: true },
+    ],
+  },
+  {
+    title: 'Night Deposit', pay: 380,
+    intro: [
+      ['PILAR DUARTE', 'Threads owes me a deposit bag. It leaves the shop tonight, in your hands.'],
+      ['PILAR DUARTE', 'The marina buyer pays cash. If the law notices the bag, lose them or lose the fee.'],
+    ],
+    steps: [
+      { type: 'dwell', x: 114, z: -104, label: 'Collect the deposit bag outside Threads' },
+      { type: 'goto', x: -152, z: 250, label: 'Deliver to the buyer on the pier', heat: 200 },
+    ],
+  },
+  {
+    title: 'Loud Music', pay: 520,
+    intro: [
+      ['PILAR DUARTE', 'Club Brisa stopped paying for protection. Their new friends carry guns and grudges.'],
+      ['PILAR DUARTE', 'Go to the club. Settle it in the car park. Then come home.'],
+    ],
+    steps: [
+      { type: 'goto', x: 190, z: 184, label: 'Go to Club Brisa' },
+      { type: 'shootout', x: 190, z: 184, count: 4, label: 'Clear the car park — hostiles at Club Brisa' },
+      { type: 'goto', x: PILAR_POS.x, z: PILAR_POS.z, label: 'Report back to Pilar', report: true },
+    ],
+  },
+  {
+    title: 'Grand Theft Otto', pay: 650,
+    intro: [
+      ['PILAR DUARTE', 'Otto Lindqvist parks his Vela GT on the north-east block and brags about the alarm.'],
+      ['PILAR DUARTE', 'Steal it. Park it in the west lockup. Try not to gift-wrap it around a lamppost.'],
+    ],
+    steps: [
+      { type: 'steal', x: 152, z: -128, label: 'Steal the marked Vela GT' },
+      { type: 'goto', x: -222, z: -38, label: 'Park the GT in the west lockup', heat: 150, inStolen: true },
+    ],
+  },
+  {
+    title: 'La Última Marea', pay: 3000,
+    intro: [
+      ['PILAR DUARTE', 'Last one, Nico. My sister is at Club Brisa with a bag that half the city wants.'],
+      ['PILAR DUARTE', 'Bring her to the pier. Whatever happens — do not stop the car.'],
+    ],
+    steps: [
+      { type: 'goto', x: 190, z: 184, label: 'Pick up Lucia at Club Brisa' },
+      { type: 'escape', x: -152, z: 296, label: 'ESCAPE — get Lucia to the end of the pier' },
+    ],
+  },
+];
+
+export function createMissions(THREE, scene, G) {
+  // Pilar herself, waiting by the fountain.
+  const pilar = makePersonMesh(THREE, 0xb06ab3, 0x27313d, 0xa96b3f, null);
+  pilar.position.set(PILAR_POS.x, 0, PILAR_POS.z);
+  pilar.rotation.y = 2.4;
+  scene.add(pilar);
+
+  // The objective marker: a spinning gold diamond over a ground ring.
+  const marker = new THREE.Group();
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.9),
+    new THREE.MeshBasicMaterial({ color: 0xffd23e }));
+  gem.position.y = 3.2;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(2.2, 2.9, 28),
+    new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.65, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.12;
+  marker.add(gem, ring); scene.add(marker);
+
+  // Hidden packages: glowing teal octahedra.
+  const packages = G.world.packageSpots.map((s, i) => {
+    const mesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.55),
+      new THREE.MeshBasicMaterial({ color: 0x4ecdc4 }));
+    mesh.position.set(s.x, 1.1, s.z);
+    scene.add(mesh);
+    return { ...s, i, mesh, taken: G.progress.packages.includes(i) };
+  });
+  for (const p of packages) p.mesh.visible = !p.taken;
+
+  const state = {
+    jobIndex: G.progress.jobIndex, active: null, stepIdx: 0, stepT: 0,
+    dlgQueue: [], dlgT: 0, chaseCar: null, tailTime: 0, hostiles: [],
+    race: null, taxi: null, taxiCd: 8, stolenCar: null, done: G.progress.jobIndex >= JOBS.length,
+  };
+
+  function say(lines) { state.dlgQueue.push(...lines); }
+  function currentStep() {
+    return state.active ? state.active.steps[state.stepIdx] : null;
+  }
+  function setObjectiveForStep() {
+    const s = currentStep();
+    if (!s) return;
+    if (s.type === 'chase' && state.chaseCar) {
+      G.hud.setObjective(s.label, state.chaseCar.pos.x, state.chaseCar.pos.z, 'JOB ' + (state.jobIndex + 1));
+    } else {
+      G.hud.setObjective(s.label, s.x, s.z, 'JOB ' + (state.jobIndex + 1));
     }
-    // Ivo, the accountant (shown at the lighthouse for job 4).
-    this.ivo = makePersonMesh(0xf2f2ee, 0x2c3550, 0xc98d5e, 0x2c3550);
-    this.ivo.position.set(LOCATIONS.lighthouse.x + 2, 0, LOCATIONS.lighthouse.z + 1);
-    this.ivo.visible = false; scene.add(this.ivo);
-    // Pilar Duarte herself (waits outside her club for the last job).
-    this.pilar = makePersonMesh(0x7a2e4d, 0x22131d, 0xc98d5e, 0xffd94d);
-    this.pilar.position.set(LOCATIONS.club.x + 3, 0, LOCATIONS.club.z + 2);
-    this.pilar.visible = false; scene.add(this.pilar);
-    this.rival = null; this.fare = null; this.race = null;
-    this.taxiPed = null;
   }
-  restore(G) { // apply a loaded save: story progress + packages
-    for (const p of this.packages.values())
-      if (G.packagesFound.has(p.id)) { p.taken = true; p.mesh.visible = false; }
+
+  function startJob(idx) {
+    state.active = JOBS[idx];
+    state.stepIdx = 0; state.stepT = 0; state.tailTime = 0;
+    G.hud.jobCard('STORY JOB ' + (idx + 1) + ' OF 7', state.active.title, 'For Pilar Duarte · ' + '$' + state.active.pay + ' on completion');
+    say(state.active.intro);
+    beginStep();
   }
-  queueDialogue(lines) { for (const l of lines) this.dialogueQ.push(l); }
-  startJob(G, idx) {
-    const job = STORY[idx];
-    this.active = { job, idx, step: 0, t: 0 };
-    this.jobT = 0;
-    G.hud.banner(job.title, job.sub, 4);
-    this.queueDialogue(job.intro);
-    if (job.title.startsWith('Pulpo')) this.spawnRival(G);
-    if (job.steps.some(s => s.npc === 'ivo')) this.ivo.visible = true;
-    if (job.steps.some(s => s.npc === 'pilar')) this.pilar.visible = true;
-    if (idx === 1) { // the valet Tormenta must be stealable, wherever it ended up
-      const v = G.valetCar;
-      v.health = 100; v.dead = false; v.speed = 0; v.driver = 'parked';
-      v.x = LOCATIONS.valetCar.x; v.z = LOCATIONS.valetCar.z; v.angle = LOCATIONS.valetCar.angle;
-      v.mesh.position.set(v.x, 0, v.z); v.mesh.rotation.y = v.angle;
+
+  function beginStep() {
+    const s = currentStep();
+    if (!s) return;
+    state.stepT = 0;
+    if (s.heat) G.police.addHeat(s.heat, 'job heat');
+    if (s.type === 'chase') {
+      state.chaseCar = G.fleet.spawnOne('hatch', 0xffd23e, null);
+      G.combat.registerTarget(state.chaseCar.mesh, 'car', state.chaseCar);
+      state.chaseCar.pos.set(-228, 0, -38);
+      state.chaseCar.heading = Math.PI / 2;
+      state.chaseCar.mode = 'traffic';
+      state.chaseCar.loop = { cx: -114, cz: -38, half: 42.2, dir: 1 };
+      state.chaseCar.cruise = 13.5;
+      state.tailTime = 0;
     }
-    this.applyStepFx(G);
-  }
-  applyStepFx(G) {
-    const step = this.active && this.active.job.steps[this.active.step];
-    G.police.setLock(step && step.lock ? step.lock : 0);
-    this.caseMesh.visible = !!step && this.active.step === 0 && (this.active.idx === 0 || this.active.idx === 5);
-    if (this.caseMesh.visible) {
-      const p = this.active.idx === 0 ? LOCATIONS.marina : LOCATIONS.club;
-      this.caseMesh.position.set(p.x, 0.8, p.z);
+    if (s.type === 'shootout') spawnHostiles(s);
+    if (s.type === 'steal') {
+      state.stolenCar = G.fleet.spawnOne('sports', 0xd8546a, null);
+      G.combat.registerTarget(state.stolenCar.mesh, 'car', state.stolenCar);
+      state.stolenCar.pos.set(s.x, 0, s.z);
+      state.stolenCar.heading = 0.4;
+      state.stolenCar.mesh.rotation.y = 0.4;
+      state.stolenCar.mode = 'parked';
     }
+    if (s.type === 'escape') {
+      G.police.setStars(4); G.police.setStarFloor(4);
+      say([['LUCIA', 'They are coming, Nico. Drive like the tide is behind you!']]);
+      G.hud.toast('LUCIA', 'Heat is on — reach the pier, do not stop.', 'warn');
+    }
+    setObjectiveForStep();
   }
-  spawnRival(G) {
-    const car = makeCar('sport', -30, 6, Math.PI / 2, 'rival', 0x15151a);
-    car.health = 130;
-    this.rival = car; G.spawnCar(car);
-    G.hud.toast('El Pulpo cruises downtown — find the black Tormenta', 3.4);
+
+  function completeStep() {
+    const s = currentStep();
+    if (s.type === 'escape') {
+      const pay = state.active.pay;
+      G.police.setStarFloor(0);
+      finishJob();
+      G.onEnding(pay);
+      return;
+    }
+    state.stepIdx++;
+    G.audio.gate();
+    if (state.stepIdx >= state.active.steps.length) finishJob();
+    else beginStep();
   }
-  failJob(G, why) {
-    G.hud.banner('JOB FAILED', why, 3);
-    G.audio.fail();
-    G.police.setLock(0);
-    if (this.rival) { G.despawnCar(this.rival); this.rival = null; }
-    const idx = this.active.idx;
-    this.active = null;
-    setTimeout(() => { if (!this.active) this.startJob(G, idx); }, 3600);
+
+  function finishJob() {
+    const job = state.active;
+    state.active = null;
+    state.jobIndex++;
+    G.cash += job.pay;
+    G.audio.jobDone(); G.audio.cash();
+    G.hud.jobCard('JOB COMPLETE', job.title, '+$' + job.pay + ' — Pilar pays in full');
+    G.hud.toast('PILAR DUARTE', 'Clean work. Come see me at the plaza.', 'money');
+    if (state.chaseCar) { state.chaseCar.mode = 'traffic'; }
+    if (state.jobIndex >= JOBS.length) state.done = true;
+    G.saveGame();
   }
-  completeJob(G) {
-    const { job, idx } = this.active;
-    G.cash += job.reward;
-    G.audio.success(); G.audio.cash();
-    G.hud.banner('JOB COMPLETE', job.title + ' — ' + fmtCash(job.reward), 3.6);
-    this.queueDialogue(job.outro);
-    this.storyIndex = idx + 1;
-    this.active = null;
-    G.police.setLock(0);
-    if (this.rival) { G.despawnCar(this.rival); this.rival = null; }
-    if (idx === STORY.length - 1) G.onEnding();
-    G.save();
+
+  function spawnHostiles(step) {
+    state.hostiles = [];
+    for (let i = 0; i < step.count; i++) {
+      const mesh = makePersonMesh(THREE, 0x8f2f3c, 0x1d2436, 0xd99e6a, 0x14141a);
+      scene.add(mesh);
+      const h = {
+        mesh, pos: mesh.position, health: 42, dead: false,
+        shootT: 1 + Math.random() * 1.5, phase: Math.random() * 6, heading: 0,
+      };
+      h.pos.set(step.x - 8 + i * 5.5, 0, step.z - 4 + (i % 2) * 7);
+      state.hostiles.push(h);
+      G.combat.registerTarget(mesh, 'hostile', h);
+    }
+    say([['NICO', 'Brisa car park. Four guns. Wonderful.']]);
   }
-  stepDone(G) {
-    this.active.step++;
-    G.audio.pickup();
-    if (this.active.step >= this.active.job.steps.length) this.completeJob(G);
-    else this.applyStepFx(G);
+
+  G.onHostileHit = (h, dmg) => {
+    if (h.dead) return;
+    h.health -= dmg;
+    G.police.addHeat(14, 'gunfight');
+    if (h.health <= 0) {
+      h.dead = true;
+      h.mesh.rotation.x = -Math.PI / 2; h.mesh.position.y = 0.18;
+      const left = state.hostiles.filter(x => !x.dead).length;
+      G.hud.toast('BRISA CAR PARK', left > 0 ? left + ' hostile' + (left > 1 ? 's' : '') + ' still standing.' : 'Car park clear.');
+    }
+  };
+
+  // ---- races ----
+  function startRace(kind) {
+    const defs = {
+      boardwalk: { title: 'BOARDWALK RUN', gates: G.world.boardwalkGates, par: null, pay: 250, paySlow: 250 },
+      vuelta: { title: 'GRAN VUELTA', gates: G.world.vueltaGates, par: 235, pay: 750, paySlow: 250 },
+    };
+    state.race = { ...defs[kind], idx: 0, t: 0, kind };
+    G.hud.raceShow(defs[kind].title, 'Gate 1/' + defs[kind].gates.length + ' · 0:00');
+    G.hud.toast('RACE', defs[kind].title + ' — follow the gold markers!', '');
+    G.audio.gate();
   }
-  // What pressing E near something does; main asks every frame.
-  getInteract(G) {
-    const P = G.player;
-    if (P.onFoot) {
-      for (const s of SHOPS) {
-        if (dist2d(P.x, P.z, s.door.x, s.door.z) < 5) {
-          return { text: 'E — ' + s.name + ': ' + s.service, action: () => this.useShop(G, s) };
-        }
+  function updateRace(dt) {
+    const r = state.race;
+    if (!r) return;
+    if (!G.playerInCar()) { endRace(false, 'Race abandoned — you left the car.'); return; }
+    r.t += dt;
+    const gate = r.gates[r.idx];
+    const p = G.playerPos();
+    G.hud.raceShow(r.title, 'Gate ' + (r.idx + 1) + '/' + r.gates.length + ' · ' + G.hud.fmtTime(r.t) + (r.par ? ' · par ' + G.hud.fmtTime(r.par) : ''));
+    if (Math.hypot(gate.x - p.x, gate.z - p.z) < 10) {
+      r.idx++; G.audio.gate();
+      if (r.idx >= r.gates.length) {
+        const under = !r.par || r.t <= r.par;
+        const pay = under ? r.pay : r.paySlow;
+        G.cash += pay; G.audio.cash();
+        endRace(true, r.title + ' finished in ' + G.hud.fmtTime(r.t) + ' — +' + '$' + pay);
+        G.saveGame();
       }
-    } else if (P.car && dist2d(P.car.x, P.car.z, LOCATIONS.garage.x, LOCATIONS.garage.z) < 11) {
-      return { text: 'E — TALLER SOL: full repair — $60', action: () => this.useShop(G, SHOPS[0], true) };
     }
-    if (!P.onFoot && !this.race && !this.active) {
-      if (dist2d(P.car.x, P.car.z, LOCATIONS.raceStart.x, LOCATIONS.raceStart.z) < 7) {
-        return { text: 'E — start the Boardwalk Run (8 gates, par ' + fmtTime(RACE_PAR) + ', prize $300)', action: () => this.startRace(G) };
+  }
+  function endRace(won, msg) {
+    state.race = null;
+    G.hud.raceHide();
+    G.hud.toast('RACE', msg, won ? 'money' : 'warn');
+  }
+
+  // ---- taxi fares ----
+  function updateTaxi(dt) {
+    state.taxiCd -= dt;
+    const inTaxi = G.playerInCar() && G.playerCar().type === 'taxi';
+    if (!state.taxi && inTaxi && state.taxiCd <= 0 && !state.active) {
+      const spots = [[-76, 38], [76, -76], [0, 114], [152, 76], [-152, -114], [38, -190 + 24]];
+      const pick = spots[Math.floor(Math.random() * spots.length)];
+      state.taxi = { phase: 'pickup', x: pick[0], z: pick[1], fare: 0 };
+      G.hud.toast('FARE', 'Passenger waiting — follow the marker.', '');
+      G.hud.setObjective('Pick up your fare', pick[0], pick[1], 'TAXI');
+    }
+    if (!state.taxi) return;
+    if (!inTaxi) { state.taxi = null; state.taxiCd = 15; if (!state.active) G.hud.setObjective(null); return; }
+    const p = G.playerPos(), t = state.taxi;
+    if (Math.hypot(t.x - p.x, t.z - p.z) < 8 && Math.abs(G.playerCar().speed) < 1.5) {
+      if (t.phase === 'pickup') {
+        const dests = [[190, 150], [-190, -150], [114, 60], [-60, 190 - 16], [0, -160]];
+        const d = dests[Math.floor(Math.random() * dests.length)];
+        t.phase = 'drop'; t.x = d[0]; t.z = d[1];
+        t.fare = 42 + Math.hypot(d[0] - p.x, d[1] - p.z) * 0.4;
+        G.hud.setObjective('Drop off your passenger', d[0], d[1], 'TAXI');
+        G.audio.pickup();
+      } else {
+        G.cash += Math.round(t.fare); G.audio.cash();
+        G.hud.toast('FARE PAID', '+$' + Math.round(t.fare) + ' — five stars, probably.', 'money');
+        state.taxi = null; state.taxiCd = 18;
+        if (!state.active) G.hud.setObjective(null);
+        G.saveGame();
       }
-      if (dist2d(P.car.x, P.car.z, LOCATIONS.tourStart.x, LOCATIONS.tourStart.z) < 8) {
-        return { text: 'E — start the GRAN VUELTA (10 gates citywide, par ' + fmtTime(TOUR_PAR) + ', prize $750)', action: () => this.startTour(G) };
-      }
+    }
+  }
+
+  // ---- shops ----
+  function nearestShop() {
+    const p = G.playerPos();
+    for (const s of G.world.shops) {
+      if (Math.hypot(s.x - p.x, s.z - p.z) < 6 && !G.playerInCar()) return s;
     }
     return null;
   }
-  useShop(G, shop, driveIn = false) {
-    const P = G.player;
-    const pay = n => { if (G.cash < n) { G.hud.toast('Not enough cash', 1.8); G.audio.fail(); return false; } G.cash -= n; G.audio.cash(); return true; };
-    if (shop.id === 'clinic') { if (P.health >= 100) { G.hud.toast('Already at full health', 1.6); return; } if (pay(40)) { P.health = 100; G.hud.toast('Patched up — full health', 2); } }
-    if (shop.id === 'gun') { if (P.armor >= 100) { G.hud.toast('Armor already maxed', 1.6); return; } if (pay(100)) { P.armor = 100; G.hud.toast('Body armor fitted', 2); } }
-    if (shop.id === 'garage') {
-      const car = P.car || G.lastCar;
-      if (!car) { G.hud.toast('Bring a car to the garage first', 1.8); return; }
-      if (car.health >= 100 && !car.dead) { G.hud.toast('This car needs nothing', 1.6); return; }
-      if (pay(60)) { car.health = 100; car.dead = false; G.hud.toast('Good as new — ' + car.spec.name, 2); }
+  function useShop(shop) {
+    if (shop.id === 'CLINIC') {
+      if (G.cash < 60) return G.hud.toast('CLINIC', 'Full treatment is $60. You are short.', 'warn');
+      if (G.health >= 100) return G.hud.toast('CLINIC', 'You are already in perfect health.', '');
+      G.cash -= 60; G.health = 100; G.audio.cash();
+      G.hud.toast('COSTA CARE', 'Patched up. Health restored.', 'money');
+    } else if (shop.id === 'THREADS') {
+      if (G.cash < 40) return G.hud.toast('THREADS', 'A new outfit is $40. You are short.', 'warn');
+      G.cash -= 40;
+      G.progress.outfit = (G.progress.outfit + 1) % 4;
+      const name = G.applyOutfit(G.progress.outfit);
+      G.audio.cash();
+      G.hud.toast('VERA THREADS', 'Now wearing: ' + name + '.', 'money');
+    } else {
+      if (G.cash < 15) return G.hud.toast('SNACKS', 'A snack is $15. You are short.', 'warn');
+      if (G.health >= 100) return G.hud.toast('SNACKS', 'You are full. Save it for later.', '');
+      G.cash -= 15; G.health = Math.min(100, G.health + 35); G.audio.cash();
+      G.hud.toast('BOARDWALK SNACKS', 'Empanada down. +35 health.', 'money');
     }
-    G.save();
+    G.saveGame();
   }
-  startRace(G) {
-    this.race = { name: 'Boardwalk Run', gates: RACE_GATES, par: RACE_PAR, prize: 300, gate: 0, t: 0 };
-    G.hud.banner('BOARDWALK RUN', 'Hit every gate — beat ' + fmtTime(RACE_PAR) + ' for $300', 3.2);
-    G.audio.success();
-  }
-  startTour(G) {
-    this.race = { name: 'Gran Vuelta', gates: TOUR_GATES, par: TOUR_PAR, prize: TOUR_PRIZE, gate: 0, t: 0 };
-    G.hud.banner('GRAN VUELTA', 'Ten gates, the whole city — beat ' + fmtTime(TOUR_PAR) + ' for $750', 3.6);
-    G.hud.dialogue('PILAR (phone)', 'The whole city is a racetrack tonight, Nico. Show them whose streets these are.', 3.6);
-    G.audio.success();
-  }
-  // Taxi work: hail a pedestrian while driving a taxi.
-  updateTaxi(G, dt) {
-    const P = G.player;
-    if (this.fare) {
-      const f = this.fare;
-      if (P.onFoot) { /* fare waits in the car… but the player left: cancel */
-        this.endFare(G, false); return;
+
+  function update(dt, t) {
+    // Pilar breathes and turns toward the player when close.
+    const pp = G.playerPos();
+    const pdist = Math.hypot(pp.x - PILAR_POS.x, pp.z - PILAR_POS.z);
+    pilar.position.y = Math.sin(t * 1.8) * 0.02;
+    if (pdist < 9) pilar.rotation.y = headingOf(pp.x - PILAR_POS.x, pp.z - PILAR_POS.z);
+
+    // Dialogue queue.
+    if (state.dlgQueue.length && state.dlgT <= 0) {
+      const [name, text] = state.dlgQueue.shift();
+      G.hud.dialogue(name, text, 3.6);
+      state.dlgT = 3.7;
+    }
+    if (state.dlgT > 0) state.dlgT -= dt;
+
+    // Marker follows the current goal.
+    let mx = null, mz = null;
+    const step = currentStep();
+    if (state.race) { const g = state.race.gates[state.race.idx]; mx = g.x; mz = g.z; }
+    else if (state.taxi) { mx = state.taxi.x; mz = state.taxi.z; }
+    else if (step) {
+      if (step.type === 'chase' && state.chaseCar) { mx = state.chaseCar.pos.x; mz = state.chaseCar.pos.z; }
+      else { mx = step.x; mz = step.z; }
+    } else if (!state.done) { mx = PILAR_POS.x; mz = PILAR_POS.z; }
+    if (mx === null) marker.visible = false;
+    else {
+      marker.visible = true;
+      marker.position.set(mx, 0, mz);
+      gem.position.y = 3.1 + Math.sin(t * 2.4) * 0.35;
+      gem.rotation.y = t * 1.8;
+      ring.scale.setScalar(1 + Math.sin(t * 3) * 0.07);
+    }
+
+    // Interact prompts and the E key.
+    let promptHtml = null;
+    if (!state.active && !state.done && pdist < 3.6 && !G.playerInCar()) {
+      promptHtml = '<b>E</b> Talk to Pilar — new job';
+      if (G.consumeInteract()) startJob(state.jobIndex);
+    }
+    const shop = nearestShop();
+    if (shop && !promptHtml) {
+      promptHtml = '<b>E</b> ' + shop.name + (shop.id === 'CLINIC' ? ' — heal $60' : shop.id === 'THREADS' ? ' — new outfit $40' : ' — snack $15');
+      if (G.consumeInteract()) useShop(shop);
+    }
+    // Race start rings.
+    if (!state.race && G.playerInCar() && !promptHtml) {
+      if (Math.hypot(pp.x + 224, pp.z - 190) < 8) {
+        promptHtml = '<b>E</b> Start BOARDWALK RUN — $250 prize';
+        if (G.consumeInteract()) startRace('boardwalk');
+      } else if (Math.hypot(pp.x + 228, pp.z - 114) < 8) {
+        promptHtml = '<b>E</b> Start GRAN VUELTA — par 3:55, $750 prize';
+        if (G.consumeInteract()) startRace('vuelta');
       }
-      f.t += dt;
-      if (dist2d(P.car.x, P.car.z, f.dest.x, f.dest.z) < 9 && Math.abs(P.car.speed) < 3) {
-        const payAmt = Math.round(20 + f.dist * 0.35 + (f.t < f.dist * 0.09 ? 12 : 0));
-        G.cash += payAmt; G.audio.cash();
-        G.hud.toast('Fare paid ' + fmtCash(payAmt) + (f.t < f.dist * 0.09 ? ' — with a fast tip!' : ''), 2.6);
-        f.ped.state = 'walk'; f.ped.mesh.visible = true;
-        G.people.placeOnSidewalk(f.ped, f.dest.x, f.dest.z);
-        this.fare = null; G.save();
-      }
-      return;
     }
-    if (this.taxiPed) { // waiting for pickup
-      const ped = this.taxiPed;
-      if (!P.onFoot && P.car.type === 'taxi' && Math.abs(P.car.speed) < 2 && dist2d(P.car.x, P.car.z, ped.x, ped.z) < 4.5) {
-        ped.state = 'ride'; ped.mesh.visible = false; ped.hail = false;
-        const dest = pick([LOCATIONS.club, LOCATIONS.hotel, LOCATIONS.marina, LOCATIONS.clinic,
-          LOCATIONS.gunshop, LOCATIONS.safehouse, { x: -196, z: -156 }, { x: 196, z: 76 }]);
-        const dist = dist2d(P.car.x, P.car.z, dest.x, dest.z);
-        this.fare = { ped, dest, dist, t: 0 };
-        this.taxiPed = null;
-        G.hud.dialogue('FARE', '“' + (dest.name || 'Across town') + ', friend — and step on it.”', 3);
-        G.audio.pickup();
-      } else if (P.onFoot || (P.car && P.car.type !== 'taxi')) { ped.hail = false; ped.state = 'walk'; this.taxiPed = null; }
-      return;
-    }
-    if (!P.onFoot && P.car.type === 'taxi' && !this.active) {
-      let best = null, bd = 70;
-      for (const ped of G.people.peds) {
-        if (ped.state !== 'walk') continue;
-        const d = dist2d(P.car.x, P.car.z, ped.x, ped.z);
-        if (d < bd) { bd = d; best = ped; }
-      }
-      if (best) { best.hail = true; best.state = 'walk'; this.taxiPed = best; }
-    }
-  }
-  endFare(G, silent) {
-    if (this.fare) {
-      this.fare.ped.state = 'walk'; this.fare.ped.mesh.visible = true;
-      G.people.placeOnSidewalk(this.fare.ped, G.player.x + 20, G.player.z + 20);
-      this.fare = null;
-    }
-    if (!silent) G.hud.toast('Fare lost', 1.8);
-  }
-  update(dt, G) {
-    // Dialogue queue: one line at a time.
-    if (this.dialogueQ.length && performance.now() >= this.dialogueAt) {
-      const l = this.dialogueQ.shift();
-      G.hud.dialogue(l.who, l.text, 4.4);
-      this.dialogueAt = performance.now() + 4500;
-    }
-    // Rival flee AI during job 5.
-    if (this.rival && !this.rival.dead) {
-      const r = this.rival, P = G.player;
-      const px = P.onFoot ? P.x : P.car.x, pz = P.onFoot ? P.z : P.car.z;
-      const away = Math.atan2(r.x - px, r.z - pz);
-      const tx = clamp(r.x + Math.sin(away) * 46, -240, 240), tz = clamp(r.z + Math.cos(away) * 46, -205, 155);
-      const desired = Math.atan2(tx - r.x, tz - r.z);
-      const diff = ((desired - r.angle + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-      r.angle += clamp(diff, -r.spec.turn * dt, r.spec.turn * dt);
-      const want = r.spec.topSpeed * 0.82;
-      r.speed += clamp(want - r.speed, -20 * dt, r.spec.accel * dt);
-      r.x += Math.sin(r.angle) * r.speed * dt; r.z += Math.cos(r.angle) * r.speed * dt;
-      r.mesh.position.set(r.x, 0, r.z); r.mesh.rotation.y = r.angle;
-    }
-    // Packages: bob, spin, collect on foot.
-    const t = performance.now() * 0.001;
-    for (const p of this.packages.values()) {
+    G.hud.prompt(promptHtml);
+
+    // Packages.
+    for (const p of packages) {
       if (p.taken) continue;
-      p.mesh.rotation.y = t * 1.6; p.mesh.position.y = 0.7 + Math.sin(t * 2 + p.id) * 0.14;
-      if (G.player.onFoot && dist2d(G.player.x, G.player.z, p.x, p.z) < 1.9) {
+      p.mesh.rotation.y = t * 2;
+      p.mesh.position.y = 1.1 + Math.sin(t * 2.2 + p.i) * 0.22;
+      if (Math.hypot(pp.x - p.x, pp.z - p.z) < 2.6) {
         p.taken = true; p.mesh.visible = false;
-        G.packagesFound.add(p.id); G.cash += 25;
-        G.audio.pickup();
-        G.hud.toast('Hidden package ' + G.packagesFound.size + '/15 — +$25', 2.2);
-        G.save();
+        G.progress.packages.push(p.i);
+        G.cash += 75; G.audio.pickup();
+        const left = packages.filter(x => !x.taken).length;
+        G.hud.toast('HIDDEN PACKAGE', '+$75 — ' + (left === 0 ? 'all 15 found! Bonus $500.' : left + ' still hidden in Costa Vera.'), 'money');
+        if (left === 0) G.cash += 500;
+        G.saveGame();
       }
     }
-    this.updateTaxi(G, dt);
-    // Races: the boardwalk sprint and the Gran Vuelta share the machinery.
-    if (this.race) {
-      const r = this.race; r.t += dt;
-      const gate = r.gates[r.gate];
-      G.objectivePos = gate;
-      G.objectiveText = r.name + ' — gate ' + (r.gate + 1) + '/' + r.gates.length + ' · ' + fmtTime(r.t);
-      G.jobProgress = r.name + ' · par ' + fmtTime(r.par) + (G.raceBest ? ' · best ' + fmtTime(G.raceBest) : '');
-      if (!G.player.onFoot && dist2d(G.player.car.x, G.player.car.z, gate.x, gate.z) < 10) {
-        r.gate++; G.audio.pickup();
-        if (r.gate >= r.gates.length) {
-          const prize = r.t <= r.par ? r.prize : 50;
-          G.cash += prize; G.audio.success();
-          G.hud.banner(r.name.toUpperCase() + ' FINISHED', fmtTime(r.t) + ' — prize ' + fmtCash(prize), 3.4);
-          if (!G.raceBest || r.t < G.raceBest) G.raceBest = r.t;
-          this.race = null; G.save();
-        }
-      }
-      this.beam.visible = this.ring.visible = true;
-      this.placeMarker(gate, t);
-      return;
-    }
-    if (this.fare) {
-      G.objectivePos = this.fare.dest;
-      G.objectiveText = 'Taxi fare — drive your passenger to the marker';
-      G.jobProgress = 'Fare meter running…';
-      return;
-    }
-    if (this.taxiPed) {
-      G.objectivePos = { x: this.taxiPed.x, z: this.taxiPed.z };
-      G.objectiveText = 'Taxi — stop beside the hailing passenger';
-      return;
-    }
-    // Story flow.
-    if (!this.active) {
-      if (this.storyIndex < STORY.length) {
-        const next = STORY[this.storyIndex];
-        G.objectivePos = LOCATIONS.club;
-        G.objectiveText = 'See Pilar at Club Brisa — next job: “' + next.title + '”';
-        G.jobProgress = 'Story job ' + (this.storyIndex + 1) + ' of ' + STORY.length + ' · Packages ' + G.packagesFound.size + '/15';
-        if (G.player.onFoot && dist2d(G.player.x, G.player.z, LOCATIONS.club.x, LOCATIONS.club.z) < 7)
-          this.startJob(G, this.storyIndex);
-      } else {
-        G.objectivePos = null;
-        G.objectiveText = 'Free roam — the city is yours. Taxi fares, the Boardwalk Run, the Gran Vuelta and 15 packages remain.';
-        G.jobProgress = 'Story complete · Packages ' + G.packagesFound.size + '/15' + (G.raceBest ? ' · Best race ' + fmtTime(G.raceBest) : '');
-      }
-      this.beam.visible = this.ring.visible = !!G.objectivePos;
-      if (G.objectivePos) this.placeMarker(G.objectivePos, t);
-      return;
-    }
-    // Active job.
-    const a = this.active, job = a.job, step = job.steps[a.step];
-    a.t += dt; this.jobT += dt;
-    if (job.timer) {
-      const left = job.timer - a.t;
-      G.jobProgress = 'Time left ' + fmtTime(Math.max(0, left));
-      if (left <= 0) { this.failJob(G, 'The round took too long. Pilar resends you.'); return; }
-    } else G.jobProgress = 'Job: ' + job.title + ' — step ' + (a.step + 1) + '/' + job.steps.length;
-    G.objectiveText = step.label;
-    this.caseMesh.rotation.y = t * 2;
-    const P = G.player;
-    const px = P.onFoot ? P.x : P.car.x, pz = P.onFoot ? P.z : P.car.z;
-    switch (step.kind) {
-      case 'goto':
-        G.objectivePos = step.pos;
-        if (dist2d(px, pz, step.pos.x, step.pos.z) < step.r && (!step.onFoot || P.onFoot) && (!step.needCar || !P.onFoot)) this.stepDone(G);
-        break;
-      case 'steal':
-        G.objectivePos = { x: G.valetCar.x, z: G.valetCar.z };
-        if (!P.onFoot && P.car === G.valetCar) this.stepDone(G);
-        break;
-      case 'deliverCar':
-        G.objectivePos = step.pos;
-        if (!P.onFoot && P.car === G.valetCar && dist2d(P.car.x, P.car.z, step.pos.x, step.pos.z) < step.r) this.stepDone(G);
-        else if (G.valetCar.dead) this.failJob(G, 'The Tormenta is wrecked. Pilar is… displeased.');
-        break;
-      case 'pickup': {
-        G.objectivePos = step.pos;
-        if (!P.onFoot && dist2d(P.car.x, P.car.z, step.pos.x, step.pos.z) < step.r && Math.abs(P.car.speed) < 3) {
-          (step.npc === 'pilar' ? this.pilar : this.ivo).visible = false;
-          G.police.reportCrime('mission', P.car.x, P.car.z, G);
-          G.police.heat = Math.max(G.police.heat, step.heat || 3);
-          G.hud.dialogue(step.who || 'IVO', step.line || 'Drive!', 3.6);
-          this.stepDone(G);
-        }
-        break;
-      }
-      case 'escape':
-        G.objectivePos = null;
-        G.objectiveText = step.label + ' (now: ' + G.police.stars() + '★)';
-        if (G.police.stars() === 0) this.stepDone(G);
-        break;
-      case 'ram':
-        if (this.rival) {
-          G.objectivePos = { x: this.rival.x, z: this.rival.z };
-          if (this.rival.dead || this.rival.health <= 18) {
-            G.hud.toast('El Pulpo’s Tormenta is finished!', 2.6);
-            this.stepDone(G);
+
+    // Story step progression.
+    if (step) {
+      state.stepT += dt;
+      if (step.type === 'goto' || step.type === 'dwell') {
+        const d = Math.hypot(pp.x - step.x, pp.z - step.z);
+        if (step.type === 'goto' && d < 7) {
+          if (step.time && state.stepT > step.time) {
+            G.hud.toast('PILAR DUARTE', 'Late. Half fee, and do not make it a habit.', 'warn');
+            state.active.pay = Math.floor(state.active.pay / 2);
+            step.time = null;
+          }
+          completeStep();
+        } else if (step.type === 'dwell') {
+          if (d < 6 && (!G.playerInCar() || Math.abs(G.playerCar().speed) < 1)) {
+            if (state.stepT > 1.1) completeStep();
           }
         }
-        break;
+        if (step.time) {
+          const left = Math.max(0, Math.ceil(step.time - state.stepT));
+          G.hud.setObjective(step.label + ' — ' + left + 's left', step.x, step.z, 'JOB ' + (state.jobIndex + 1));
+        }
+      } else if (step.type === 'chase') {
+        const car = state.chaseCar;
+        const d = Math.hypot(pp.x - car.pos.x, pp.z - car.pos.z);
+        if (d < 15) state.tailTime += dt;
+        G.hud.setObjective(step.label + ' — tailed ' + Math.min(5, state.tailTime).toFixed(1) + '/5.0s', car.pos.x, car.pos.z, 'JOB ' + (state.jobIndex + 1));
+        if (state.tailTime >= 5) {
+          G.hud.toast('PILAR DUARTE', 'Good eyes. He stopped at the north alley.', '');
+          completeStep();
+        }
+      } else if (step.type === 'shootout') {
+        for (const h of state.hostiles) {
+          if (h.dead) continue;
+          const d = Math.hypot(h.pos.x - pp.x, h.pos.z - pp.z);
+          h.heading = headingOf(pp.x - h.pos.x, pp.z - h.pos.z);
+          h.mesh.rotation.y = h.heading;
+          if (d > 16) {
+            h.pos.x += Math.sin(h.heading) * 2.4 * dt;
+            h.pos.z += Math.cos(h.heading) * 2.4 * dt;
+          }
+          h.shootT -= dt;
+          if (h.shootT <= 0 && d < 30) {
+            h.shootT = 1.3 + Math.random() * 1.1;
+            const from = h.pos.clone(); from.y += 1.35;
+            const to = pp.clone(); to.y += 1.1;
+            G.effects.tracer(from, to); G.effects.muzzle(from);
+            G.audio.distantShot();
+            if (Math.random() < clamp(0.5 - d * 0.01, 0.08, 0.4)) G.damagePlayer(4 + Math.random() * 4);
+          }
+        }
+        if (state.hostiles.length && state.hostiles.every(h => h.dead)) completeStep();
+      } else if (step.type === 'steal') {
+        if (G.playerInCar() && G.playerCar() === state.stolenCar) {
+          G.police.addHeat(60, 'grand theft auto');
+          completeStep();
+        }
+      } else if (step.type === 'escape') {
+        const d = Math.hypot(pp.x - step.x, pp.z - step.z);
+        if (d < 8 && G.playerInCar()) completeStep();
+      }
+    } else if (!state.done && !state.race && !state.taxi) {
+      G.hud.setObjective(state.jobIndex === 0 ? 'Meet Pilar Duarte at the fountain plaza' : 'Return to Pilar at the fountain plaza', PILAR_POS.x, PILAR_POS.z, 'STORY');
+    } else if (state.done && !state.race && !state.taxi) {
+      G.hud.setObjective('Golden Hour complete — Costa Vera is yours to roam', null, null, 'FREE ROAM');
     }
-    this.beam.visible = this.ring.visible = !!G.objectivePos;
-    if (G.objectivePos) this.placeMarker(G.objectivePos, t);
+
+    updateRace(dt);
+    updateTaxi(dt);
   }
-  placeMarker(pos, t) {
-    this.beam.position.set(pos.x, 21, pos.z);
-    this.ring.position.set(pos.x, 0.12, pos.z);
-    const s = 1 + Math.sin(t * 3) * 0.12;
-    this.ring.scale.set(s, s, 1);
+
+  // Continue restores where the story left off: job index and the packages
+  // already pocketed (their meshes hide again).
+  function applyProgress(progress) {
+    state.jobIndex = progress.jobIndex;
+    state.done = progress.jobIndex >= JOBS.length;
+    for (const p of packages) {
+      p.taken = progress.packages.includes(p.i);
+      p.mesh.visible = !p.taken;
+    }
   }
+
+  return {
+    update, state, applyProgress,
+    jobCount: JOBS.length,
+    remainingPackages: () => packages.filter(p => !p.taken),
+    startRace, // exposed for testing
+  };
 }

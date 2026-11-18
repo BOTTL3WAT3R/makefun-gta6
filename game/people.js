@@ -1,242 +1,213 @@
-// people.js — the on-foot player character (Nico Ferrer) and Costa Vera's
-// pedestrians: sidewalk walkers who flee danger, hail taxis, stop to chat
-// in pairs, walk their dogs, and fall when hit.
+// people.js — the citizens of Costa Vera: low-poly pedestrians who stroll
+// the sidewalks, chat in pairs, flee from trouble and fall when hurt, five
+// dogs, and Nico Ferrer himself, the player's character.
 
-import * as THREE from 'three';
-import { mergeParts, partBox, AVENUES_X, STREETS_Z } from './world.js';
-import { clamp, angleLerp, dist2d, collideCircle, pick, rand } from './util.js';
+import { makeRng, randRange, randPick, angleTowards, headingOf } from './util.js';
+import { LAYOUT } from './world.js';
 
-const skinTones = [0xf2c79b, 0xc98d5e, 0x8a5a34, 0x6e4226];
-const shirts = [0xff6b5e, 0x3ec6ff, 0xffd94d, 0x7de28a, 0xff9ec4, 0xf2f2ee, 0xb48ce8, 0xff9a3d];
-const pants = [0x2c3550, 0x5e4632, 0xd8d2c4, 0x37474f, 0x7a2e4d];
+const SKIN = [0xf2c49b, 0xd99e6a, 0xa96b3f, 0x7a4a28, 0xffe0bd];
+const SHIRTS = [0xff6b81, 0x4ecdc4, 0xffd23e, 0x5168b8, 0xf0ece2, 0xff9a5f, 0x7bc47f, 0xb06ab3, 0x38b2a8, 0xe05a4e];
+const PANTS = [0x2c3e55, 0x4a3728, 0x555c66, 0x27313d, 0x6e4630, 0x37474f];
 
-export function makePersonMesh(shirt, pant, skin, capColor) {
+// One articulated figure: swinging legs and arms, a head that can wear a cap.
+// Parts are returned so walkers can be animated and outfits recoloured.
+export function makePersonMesh(THREE, shirt, pants, skin, capColor) {
   const g = new THREE.Group();
-  const cloth = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 });
-  const body = new THREE.Mesh(mergeParts([
-    partBox(0.52, 0.74, 0.28, 0, 1.13, 0, shirt),          // torso
-    partBox(0.3, 0.32, 0.3, 0, 1.68, 0, skin),              // head
-    partBox(0.34, 0.09, 0.34, 0, 1.87, 0, capColor),        // cap
-    partBox(0.34, 0.05, 0.2, 0, 1.84, 0.2, capColor),       // cap brim
-  ]), cloth);
-  body.castShadow = true;
-  const limbGeoL = new THREE.BoxGeometry(0.15, 0.78, 0.18); limbGeoL.translate(0, -0.39, 0);
-  const mkLimb = (geo, x, y, hex) => {
-    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: hex, roughness: 0.9 }));
-    m.position.set(x, y, 0); m.castShadow = true;
-    return m;
-  };
-  const legL = mkLimb(limbGeoL, -0.14, 0.78, pant), legR = mkLimb(limbGeoL.clone(), 0.14, 0.78, pant);
-  const armGeo = new THREE.BoxGeometry(0.12, 0.66, 0.15); armGeo.translate(0, -0.33, 0);
-  const armL = mkLimb(armGeo, -0.33, 1.44, shirt), armR = mkLimb(armGeo.clone(), 0.33, 1.44, shirt);
-  g.add(body, legL, legR, armL, armR);
-  g.userData = { legL, legR, armL, armR, body };
+  const shirtMat = new THREE.MeshLambertMaterial({ color: shirt });
+  const pantsMat = new THREE.MeshLambertMaterial({ color: pants });
+  const skinMat = new THREE.MeshLambertMaterial({ color: skin });
+  const legGeo = new THREE.BoxGeometry(0.17, 0.78, 0.19); legGeo.translate(0, -0.39, 0);
+  const armGeo = new THREE.BoxGeometry(0.13, 0.68, 0.15); armGeo.translate(0, -0.34, 0);
+  const legL = new THREE.Mesh(legGeo, pantsMat); legL.position.set(-0.11, 0.8, 0);
+  const legR = new THREE.Mesh(legGeo, pantsMat); legR.position.set(0.11, 0.8, 0);
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.62, 0.24), shirtMat);
+  torso.position.y = 1.1; torso.castShadow = true;
+  const armL = new THREE.Mesh(armGeo, shirtMat); armL.position.set(-0.31, 1.38, 0);
+  const armR = new THREE.Mesh(armGeo, shirtMat); armR.position.set(0.31, 1.38, 0);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 10, 8), skinMat);
+  head.position.y = 1.58; head.castShadow = true;
+  g.add(legL, legR, torso, armL, armR, head);
+  if (capColor !== null && capColor !== undefined) {
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.18, 0.09, 10),
+      new THREE.MeshLambertMaterial({ color: capColor }));
+    cap.position.y = 1.7; g.add(cap);
+    const brim = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.04, 0.2),
+      new THREE.MeshLambertMaterial({ color: capColor }));
+    brim.position.set(0, 1.67, 0.2); g.add(brim);
+  }
+  g.userData.parts = { legL, legR, armL, armR, torso, head, shirtMat };
   return g;
 }
 
-export function animatePerson(mesh, phase, speedRatio, aiming) {
-  const u = mesh.userData;
-  const swing = Math.sin(phase) * 0.55 * speedRatio;
-  u.legL.rotation.x = swing; u.legR.rotation.x = -swing;
-  u.armL.rotation.x = aiming ? -1.25 : -swing * 0.8;
-  u.armR.rotation.x = aiming ? -1.35 : swing * 0.8;
+export const NICO_OUTFITS = [
+  { shirt: 0xff7847, pants: 0x27313d, name: 'Sunset Tee' },
+  { shirt: 0x38b2a8, pants: 0xf0ece2, name: 'Marina Look' },
+  { shirt: 0x2c2c34, pants: 0x2c2c34, name: 'Night Black' },
+  { shirt: 0xffd23e, pants: 0x5168b8, name: 'Sol Yellow' },
+];
+
+export function makePlayerMesh(THREE) {
+  const outfit = NICO_OUTFITS[0];
+  const mesh = makePersonMesh(THREE, outfit.shirt, outfit.pants, 0xd99e6a, 0x22222e);
+  return mesh;
 }
 
-// A dog: one merged mesh, trots at its owner's heel.
-function makeDogMesh(coat) {
-  const m = new THREE.Mesh(mergeParts([
-    partBox(0.34, 0.34, 0.78, 0, 0.48, 0, coat),                 // body
-    partBox(0.26, 0.26, 0.3, 0, 0.68, 0.48, coat),               // head
-    partBox(0.1, 0.1, 0.24, 0, 0.6, 0.66, 0x2c2118),             // snout
-    partBox(0.07, 0.2, 0.07, 0, 0.72, -0.44, coat, 0, -0.5),     // tail, up
-    partBox(0.09, 0.34, 0.09, -0.1, 0.17, 0.28, coat), partBox(0.09, 0.34, 0.09, 0.1, 0.17, 0.28, coat),
-    partBox(0.09, 0.34, 0.09, -0.1, 0.17, -0.28, coat), partBox(0.09, 0.34, 0.09, 0.1, 0.17, -0.28, coat),
-  ]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-  m.castShadow = true;
-  return m;
+export function setOutfit(THREE, playerMesh, idx) {
+  const o = NICO_OUTFITS[idx % NICO_OUTFITS.length];
+  playerMesh.userData.parts.shirtMat.color.setHex(o.shirt);
+  return o;
 }
 
-export class PeopleSystem {
-  constructor(scene, world) {
-    this.world = world; this.peds = [];
-    for (let i = 0; i < 40; i++) {
-      const mesh = makePersonMesh(pick(shirts), pick(pants), pick(skinTones), pick(shirts));
-      const ped = {
-        mesh, x: 0, z: 0, angle: rand(0, 6.28), speed: 0, health: 100,
-        state: 'walk', fleeT: 0, downT: 0, phase: rand(0, 6), hail: false, route: null,
-        chatT: 0, partner: null, dog: null,
-      };
-      this.placeOnSidewalk(ped, rand(-230, 230), rand(-200, 170));
-      scene.add(mesh); this.peds.push(ped);
-    }
-    // Five of them walk dogs.
-    for (let i = 0; i < 5; i++) {
-      const ped = this.peds[i * 7 + 2];
-      const dogMesh = makeDogMesh(pick([0x8a5e3a, 0xd8d2c4, 0x3a3230, 0xb0563a]));
-      scene.add(dogMesh);
-      ped.dog = { mesh: dogMesh, x: ped.x - 0.8, z: ped.z - 0.8, angle: ped.angle, phase: rand(0, 6) };
-    }
-    // Four pairs start out mid-conversation on the promenade and downtown.
-    for (let i = 0; i < 4; i++) {
-      const a = this.peds[30 + i * 2], b = this.peds[31 + i * 2];
-      if (!a || !b) break;
-      const sx = rand(-180, 180), sz = pick([171.5, -40 + 11.3, 40 - 11.3, 80 + 11.3]);
-      this.placeOnSidewalk(a, sx, sz); this.placeOnSidewalk(b, sx + 1.1, sz + 0.4);
-      b.x = a.x + 1.05; b.z = a.z + 0.35;
-      a.angle = Math.atan2(b.x - a.x, b.z - a.z); b.angle = Math.atan2(a.x - b.x, a.z - b.z);
-      a.state = b.state = 'chat'; a.chatT = b.chatT = rand(7, 15);
-      a.partner = b; b.partner = a;
-    }
-  }
-  placeOnSidewalk(ped, x, z) {
-    // Snap to a sidewalk: offset from the nearest road centreline.
-    let best = null;
-    for (const ax of AVENUES_X) { const d = Math.abs(x - ax); if (!best || d < best.d) best = { d, axis: 'z', fixed: ax }; }
-    for (const sz of STREETS_Z) { const d = Math.abs(z - sz); if (!best || d < best.d) best = { d, axis: 'x', fixed: sz }; }
-    ped.route = { axis: best.axis, fixed: best.fixed, side: Math.random() < 0.5 ? -11.3 : 11.3 };
-    ped.dir = Math.random() < 0.5 ? 1 : -1;
-    if (best.axis === 'z') { ped.x = best.fixed + ped.route.side; ped.z = z; }
-    else { ped.z = best.fixed + ped.route.side; ped.x = x; }
-    ped.state = 'walk'; ped.health = 100; ped.mesh.rotation.set(0, ped.angle, 0);
-    ped.mesh.position.y = 0;
-    if (ped.dog) { ped.dog.x = ped.x - 0.8; ped.dog.z = ped.z - 0.8; ped.dog.mesh.visible = true; }
-  }
-  damage(ped, dmg, G) {
-    if (ped.state === 'down') return;
-    ped.health -= dmg;
-    if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
-    if (ped.health <= 0) {
-      ped.state = 'down'; ped.downT = 0;
-      ped.mesh.rotation.x = -Math.PI / 2; ped.mesh.position.y = 0.18;
-      G.reportCrime && G.reportCrime('kill', ped.x, ped.z);
+function loopPoint(cx, cz, half, idx) {
+  const corners = [
+    { x: cx - half, z: cz - half }, { x: cx + half, z: cz - half },
+    { x: cx + half, z: cz + half }, { x: cx - half, z: cz + half },
+  ];
+  return corners[((idx % 4) + 4) % 4];
+}
+
+function makeDogMesh(THREE, color) {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.78), mat);
+  body.position.y = 0.42; g.add(body);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.26, 0.3), mat);
+  head.position.set(0, 0.58, 0.5); g.add(head);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.34), mat);
+  tail.position.set(0, 0.55, -0.5); tail.rotation.x = -0.6; g.add(tail);
+  g.userData.tail = tail;
+  return g;
+}
+
+// The crowd: 40 walkers and talkers plus 5 dogs, all animated in update().
+export function createCrowd(THREE, scene) {
+  const rng = makeRng(4242);
+  const people = [], dogs = [];
+  for (let i = 0; i < 40; i++) {
+    const mesh = makePersonMesh(THREE, randPick(rng, SHIRTS), randPick(rng, PANTS),
+      randPick(rng, SKIN), rng() < 0.4 ? randPick(rng, SHIRTS) : null);
+    scene.add(mesh);
+    const ped = {
+      mesh, pos: mesh.position, heading: rng() * 6.28, health: 30,
+      mode: 'walk', phase: rng() * 6.28, speed: randRange(rng, 1.1, 1.9),
+      loop: null, wp: 0, fleeFrom: null, fleeT: 0, downT: 0, chatPartner: null,
+    };
+    if (i < 8) {
+      // Chatting pairs stand together on corners and the plaza edge.
+      const spots = [[12, 24], [-60, -60], [90, 100], [-160, -100]];
+      const s = spots[Math.floor(i / 2)];
+      ped.mode = 'chat';
+      ped.pos.set(s[0] + (i % 2 ? 1.1 : -1.1), 0, s[1] + randRange(rng, -1, 1));
+      ped.heading = i % 2 ? -Math.PI / 2 : Math.PI / 2;
+    } else if (i < 12) {
+      // Beach strollers walk the sand.
+      ped.mode = 'beach';
+      ped.pos.set(randRange(rng, -220, 220), 0, randRange(rng, 206, 228));
+      ped.wp = rng() < 0.5 ? 1 : -1; // direction along the beach
     } else {
-      ped.state = 'flee'; ped.fleeT = 3;
-      G.reportCrime && G.reportCrime('assault', ped.x, ped.z);
+      const bx = randPick(rng, LAYOUT.cols), bz = randPick(rng, LAYOUT.rows);
+      ped.loop = { cx: bx, cz: bz, half: 31.5 };
+      ped.wp = Math.floor(rng() * 4);
+      const start = loopPoint(bx, bz, 31.5, ped.wp);
+      ped.pos.set(start.x + randRange(rng, -4, 4), 0, start.z + randRange(rng, -4, 4));
     }
+    people.push(ped);
   }
-  stepDog(ped, dt) {
-    const dog = ped.dog;
-    if (!dog) return;
-    if (ped.state === 'ride' || ped.state === 'gone') { dog.mesh.visible = false; return; }
-    dog.mesh.visible = true;
-    // heel: behind and to the left of the owner, trotting to keep up
-    const hx = ped.x - Math.sin(ped.angle) * 0.85 - Math.cos(ped.angle) * 0.4;
-    const hz = ped.z - Math.cos(ped.angle) * 0.85 + Math.sin(ped.angle) * 0.4;
-    const d = dist2d(dog.x, dog.z, hx, hz);
-    if (d > 0.15) {
-      const sp = clamp(d * 2.2, 0.8, 5.2);
-      dog.angle = angleLerp(dog.angle, Math.atan2(hx - dog.x, hz - dog.z), clamp(dt * 10, 0, 1));
-      dog.x += Math.sin(dog.angle) * sp * dt;
-      dog.z += Math.cos(dog.angle) * sp * dt;
-      dog.phase += dt * sp * 4.2;
-    }
-    dog.mesh.position.set(dog.x, Math.abs(Math.sin(dog.phase)) * 0.05, dog.z);
-    dog.mesh.rotation.y = dog.angle;
+  for (let i = 0; i < 5; i++) {
+    const mesh = makeDogMesh(THREE, randPick(rng, [0xb08954, 0x6e4630, 0xe8e0d0, 0x3a3230]));
+    scene.add(mesh);
+    const owner = people[12 + i * 4];
+    dogs.push({ mesh, pos: mesh.position, owner, phase: rng() * 6, speed: 2.2 });
   }
-  step(dt, G) {
-    const danger = G.danger; // {x, z, t} recent violence / fast car
-    for (const ped of this.peds) {
-      if (ped.state === 'ride' || ped.state === 'gone') { this.stepDog(ped, dt); continue; }
-      if (ped.state === 'down') {
-        ped.downT += dt;
-        this.stepDog(ped, dt);
-        if (ped.downT > 7 && dist2d(ped.x, ped.z, G.player.x, G.player.z) > 60) {
-          ped.mesh.rotation.x = 0; ped.mesh.position.y = 0;
-          this.placeOnSidewalk(ped, G.player.x + rand(-160, 160), G.player.z + rand(-160, 160));
-        }
-        continue;
-      }
-      if (ped.state === 'chat') {
-        ped.chatT -= dt;
-        ped.phase += dt * 0.7;
-        // idle talk: mostly still, an arm gesture now and then
-        const u = ped.mesh.userData;
-        u.armR.rotation.x = Math.sin(ped.phase * 1.7) > 0.72 ? -0.9 : 0.05;
-        u.armL.rotation.x = Math.sin(ped.phase * 1.3 + 2) > 0.8 ? -0.7 : -0.05;
-        syncPed(ped);
-        if (danger && performance.now() - danger.t < 2000 && dist2d(ped.x, ped.z, danger.x, danger.z) < 15) {
-          if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
-          ped.state = 'flee'; ped.fleeT = 2.6; ped.fleeFrom = { x: danger.x, z: danger.z };
-        } else if (ped.chatT <= 0) {
-          if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
-          ped.state = 'walk';
-        }
-        this.stepDog(ped, dt);
-        continue;
-      }
-      let moveAngle = ped.angle, speed = 0;
-      if (ped.hail) { // stands at the curb, arm up
-        ped.mesh.userData.armR.rotation.x = -2.6;
-        syncPed(ped); this.stepDog(ped, dt); continue;
-      }
-      if (danger && performance.now() - danger.t < 2600 && dist2d(ped.x, ped.z, danger.x, danger.z) < 17) {
-        ped.state = 'flee'; ped.fleeT = 2.6;
-        ped.fleeFrom = { x: danger.x, z: danger.z };
-      }
-      if (ped.state === 'flee') {
-        ped.fleeT -= dt;
-        const f = ped.fleeFrom || { x: G.player.x, z: G.player.z };
-        moveAngle = Math.atan2(ped.x - f.x, ped.z - f.z);
-        speed = 4.6;
-        if (ped.fleeT <= 0) ped.state = 'walk';
-      } else {
-        // amble along the sidewalk; turn around at the world edge or randomly
-        const r = ped.route;
-        moveAngle = r.axis === 'z' ? (ped.dir > 0 ? 0 : Math.PI) : (ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
-        speed = 1.35;
-        const along = r.axis === 'z' ? ped.z : ped.x;
-        if (along > 205 || along < -205 || Math.random() < dt * 0.01) ped.dir *= -1;
-      }
-      ped.angle = angleLerp(ped.angle, moveAngle, clamp(dt * 8, 0, 1));
-      let nx = ped.x + Math.sin(ped.angle) * speed * dt;
-      let nz = ped.z + Math.cos(ped.angle) * speed * dt;
-      [nx, nz] = collideCircle(nx, nz, 0.42, this.world.colliders);
-      ped.x = clamp(nx, -250, 250); ped.z = clamp(nz, -212, 210);
-      ped.phase += dt * speed * 3.4;
-      animatePerson(ped.mesh, ped.phase, clamp(speed / 2, 0, 1.4), false);
-      syncPed(ped);
-      this.stepDog(ped, dt);
-      // run over?
-      for (const car of G.allCars) {
-        if (Math.abs(car.speed) < 3.2) continue;
-        if (dist2d(ped.x, ped.z, car.x, car.z) < 2.0) {
-          this.damage(ped, 100, G);
-          G.events.push({ type: 'pedHit', car, x: ped.x, z: ped.z });
-          break;
-        }
-      }
-    }
-  }
-}
-function syncPed(ped) { ped.mesh.position.set(ped.x, ped.mesh.position.y, ped.z); ped.mesh.rotation.y = ped.angle; }
 
-// On-foot movement for the player: camera-relative WASD, sprint, a small hop.
-export function stepPlayerOnFoot(G, dt, input) {
-  const p = G.player;
-  const camYaw = G.camYaw;
-  let mx = 0, mz = 0;
-  if (input.f) mz += 1; if (input.b) mz -= 1;
-  if (input.l) mx -= 1; if (input.r) mx += 1;
-  const moving = (mx !== 0 || mz !== 0);
-  const sprint = input.sprint ? 1.55 : 1;
-  const speed = (moving ? 5.4 : 0) * sprint;
-  if (moving) {
-    const a = Math.atan2(mx, mz) + camYaw;
-    p.angle = angleLerp(p.angle, a, clamp(dt * 12, 0, 1));
-    let nx = p.x + Math.sin(a) * speed * dt;
-    let nz = p.z + Math.cos(a) * speed * dt;
-    [nx, nz] = collideCircle(nx, nz, 0.45, G.world.colliders);
-    p.x = clamp(nx, -250, 250); p.z = clamp(nz, -212, 210);
-    p.phase += dt * speed * 2.1;
-    if (Math.random() < dt * speed * 0.55) G.audio.step();
+  function animateWalk(ped, dt, t, speedNow) {
+    const swing = Math.sin(t * (4 + speedNow * 2.4) + ped.phase) * Math.min(0.65, 0.2 + speedNow * 0.22);
+    const p = ped.mesh.userData.parts;
+    p.legL.rotation.x = swing; p.legR.rotation.x = -swing;
+    p.armL.rotation.x = -swing * 0.7; p.armR.rotation.x = swing * 0.7;
+    ped.mesh.position.y = Math.abs(Math.sin(t * (4 + speedNow * 2.4) + ped.phase)) * 0.045;
   }
-  if (input.jump && p.y <= 0) p.vy = 4.6;
-  p.vy -= 13 * dt; p.y = Math.max(0, p.y + p.vy * dt);
-  if (p.y === 0) p.vy = 0;
-  p.speedNow = speed;
-  const bob = moving && p.y === 0 ? Math.abs(Math.sin(p.phase)) * 0.045 : 0;
-  p.mesh.position.set(p.x, p.y + bob, p.z);
-  p.mesh.rotation.y = p.angle;
-  animatePerson(p.mesh, p.phase, moving ? sprint : 0, G.aiming);
-  return moving;
+
+  function update(dt, t) {
+    for (const ped of people) {
+      const p = ped.mesh.userData.parts;
+      if (ped.mode === 'down') {
+        ped.downT -= dt;
+        ped.mesh.rotation.x = -Math.PI / 2 * Math.min(1, (ped.downT > 9.6 ? 10 - ped.downT : 1));
+        ped.mesh.position.y = 0.18;
+        if (ped.downT <= 0) {
+          ped.mode = 'flee'; ped.fleeT = 2; ped.health = Math.max(ped.health, 15);
+          ped.mesh.rotation.x = 0; ped.mesh.position.y = 0;
+        }
+        continue;
+      }
+      if (ped.mode === 'flee') {
+        ped.fleeT -= dt;
+        const away = headingOf(ped.pos.x - ped.fleeFrom.x, ped.pos.z - ped.fleeFrom.z);
+        ped.heading = angleTowards(ped.heading, away, dt * 5);
+        ped.pos.x += Math.sin(ped.heading) * 4.4 * dt;
+        ped.pos.z += Math.cos(ped.heading) * 4.4 * dt;
+        animateWalk(ped, dt, t, 4.4);
+        if (ped.fleeT <= 0) {
+          ped.mode = ped.loop ? 'walk' : 'beach';
+          if (!ped.loop && ped.mode === 'beach') ped.pos.z = Math.max(204, Math.min(230, ped.pos.z));
+        }
+      } else if (ped.mode === 'chat') {
+        p.armR.rotation.x = Math.sin(t * 1.7 + ped.phase) * 0.25 - 0.15;
+        p.armL.rotation.x = Math.sin(t * 1.3 + ped.phase) * 0.18;
+        ped.mesh.position.y = Math.sin(t * 2 + ped.phase) * 0.012;
+      } else if (ped.mode === 'beach') {
+        ped.pos.x += ped.wp * ped.speed * dt;
+        if (ped.pos.x > 232) ped.wp = -1;
+        if (ped.pos.x < -232) ped.wp = 1;
+        ped.heading = angleTowards(ped.heading, ped.wp > 0 ? Math.PI / 2 : -Math.PI / 2, dt * 3);
+        animateWalk(ped, dt, t, ped.speed);
+      } else {
+        const target = loopPoint(ped.loop.cx, ped.loop.cz, ped.loop.half, ped.wp + 1);
+        const dx = target.x - ped.pos.x, dz = target.z - ped.pos.z;
+        if (Math.hypot(dx, dz) < 2.2) ped.wp = (ped.wp + 1) % 4;
+        ped.heading = angleTowards(ped.heading, headingOf(dx, dz), dt * 4);
+        ped.pos.x += Math.sin(ped.heading) * ped.speed * dt;
+        ped.pos.z += Math.cos(ped.heading) * ped.speed * dt;
+        animateWalk(ped, dt, t, ped.speed);
+      }
+      ped.mesh.rotation.y = ped.heading;
+    }
+    for (const dog of dogs) {
+      const o = dog.owner;
+      const tx = o.pos.x - Math.sin(o.heading) * 1.1, tz = o.pos.z - Math.cos(o.heading) * 1.1;
+      const dx = tx - dog.pos.x, dz = tz - dog.pos.z, d = Math.hypot(dx, dz);
+      if (d > 0.4) {
+        const sp = Math.min(dog.speed + d * 0.4, 5);
+        dog.pos.x += (dx / d) * sp * dt; dog.pos.z += (dz / d) * sp * dt;
+        dog.mesh.rotation.y = headingOf(dx, dz);
+        dog.mesh.position.y = Math.abs(Math.sin(t * 11 + dog.phase)) * 0.05;
+      }
+      dog.mesh.userData.tail.rotation.y = Math.sin(t * 6 + dog.phase) * 0.5;
+    }
+  }
+
+  // Violence lands here: a hurt pedestrian falls, then flees when they rise.
+  function hurtPed(ped, dmg, fromPos) {
+    ped.health -= dmg;
+    ped.fleeFrom = { x: fromPos.x, z: fromPos.z };
+    if (ped.health <= 0 || dmg >= 12) {
+      ped.mode = 'down'; ped.downT = 6;
+      ped.mesh.userData.parts.legL.rotation.x = 0; ped.mesh.userData.parts.legR.rotation.x = 0;
+    } else {
+      ped.mode = 'flee'; ped.fleeT = 3.5;
+    }
+  }
+
+  function scareNear(pos, radius) {
+    for (const ped of people) {
+      if (ped.mode === 'down') continue;
+      if (Math.hypot(ped.pos.x - pos.x, ped.pos.z - pos.z) < radius) {
+        ped.mode = 'flee'; ped.fleeT = randRange(Math.random, 2, 4);
+        ped.fleeFrom = { x: pos.x, z: pos.z };
+      }
+    }
+  }
+
+  return { people, dogs, update, hurtPed, scareNear };
 }

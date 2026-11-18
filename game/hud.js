@@ -1,147 +1,171 @@
-// hud.js — everything the player reads: cash, wanted stars with a BUSTED
-// progress bar, health and armor, the objective line with a live distance
-// readout, job banners, dialogue, toasts, and the minimap (a static painted
-// map layer with live dots for player, police, traffic, the helicopter,
-// packages and the objective).
+// hud.js — everything drawn over the 3D view: the minimap, wanted stars,
+// cash and health, the objective tracker with its distance readout, dialogue
+// banners, dispatch toasts, story job cards and the end screens.
 
-import { AVENUES_X, STREETS_Z, SHOPS } from './world.js';
-import { clamp, fmtCash, fmtDist, dist2d } from './util.js';
+import { fmtMoney, fmtTime } from './util.js';
+import { LAYOUT } from './world.js';
 
 const $ = id => document.getElementById(id);
-const MAP = { x0: -260, x1: 260, z0: -230, z1: 230, w: 200, h: 200 };
-const mx = x => (x - MAP.x0) / (MAP.x1 - MAP.x0) * MAP.w;
-const mz = z => (z - MAP.z0) / (MAP.z1 - MAP.z0) * MAP.h;
 
-export class Hud {
-  constructor() {
-    this.el = {
-      hud: $('hud'), cash: $('cash'), stars: $('stars'), radio: $('radio-name'),
-      health: $('bar-health'), armor: $('bar-armor'), speed: $('speed'),
-      vehicle: $('vehicle-name'), objective: $('objective-text'), progress: $('job-progress'),
-      banner: $('banner'), bannerTitle: $('banner-title'), bannerSub: $('banner-sub'),
-      dialogue: $('dialogue'), dialogueWho: $('dialogue-who'), dialogueText: $('dialogue-text'),
-      toast: $('toast'), interact: $('interact'), crosshair: $('crosshair'),
-      arrestWrap: $('arrest-wrap'), arrestBar: $('arrest-bar'),
+export function createHud() {
+  const els = {
+    objbox: $('objbox'), objText: $('obj-text'), objDist: $('obj-dist'), objKicker: $('obj-kicker'),
+    status: $('status'), stars: $('stars'), cash: $('cash'),
+    healthfill: $('healthfill'), bustedwrap: $('bustedwrap'), bustedfill: $('bustedfill'),
+    speedo: $('speedo'), radio: $('radio'), mapwrap: $('mapwrap'),
+    dialogue: $('dialogue'), dlgName: $('dlg-name'), dlgText: $('dlg-text'),
+    prompt: $('prompt'), toasts: $('toasts'), jobcard: $('jobcard'),
+    cardKicker: $('card-kicker'), cardTitle: $('card-title'), cardSub: $('card-sub'),
+    racebox: $('racebox'), raceTitle: $('race-title'), raceInfo: $('race-info'),
+    vignette: $('vignette'), fade: $('fade'), crosshair: $('crosshair'),
+    end: $('end'), endTitle: $('end-title'), endSub: $('end-sub'),
+  };
+  const mapCtx = $('minimap').getContext('2d');
+  let objective = null; // { text, x, z } — z null means no marker
+  let dlgT = 0, cardT = 0, lastStars = -1, lastCash = null, radioText = null;
+
+  function showGameUI(on) {
+    for (const k of ['objbox', 'status', 'mapwrap']) els[k].classList.toggle('hidden', !on);
+    els.crosshair.style.display = on ? 'block' : 'none';
+    if (!on) { els.dialogue.classList.add('hidden'); els.prompt.classList.add('hidden'); els.racebox.classList.add('hidden'); }
+  }
+
+  function setObjective(text, x, z, kicker) {
+    objective = text ? { text, x, z } : null;
+    els.objbox.classList.toggle('hidden', !text);
+    if (text) {
+      els.objText.textContent = text;
+      els.objKicker.textContent = kicker || 'OBJECTIVE';
+    }
+  }
+
+  function toast(name, text, kind) {
+    const div = document.createElement('div');
+    div.className = 'toast' + (kind ? ' ' + kind : '');
+    div.innerHTML = `<b>${name}</b><br>${text}`;
+    els.toasts.appendChild(div);
+    while (els.toasts.children.length > 4) els.toasts.firstChild.remove();
+    setTimeout(() => { div.style.opacity = '0'; div.style.transition = 'opacity .5s'; }, 4200);
+    setTimeout(() => div.remove(), 4800);
+  }
+
+  function dialogue(name, text, dur) {
+    els.dlgName.textContent = name;
+    els.dlgText.textContent = text;
+    els.dialogue.classList.remove('hidden');
+    dlgT = dur || 4.2;
+  }
+  function hideDialogue() { els.dialogue.classList.add('hidden'); dlgT = 0; }
+
+  function jobCard(kicker, title, sub, dur) {
+    els.cardKicker.textContent = kicker;
+    els.cardTitle.textContent = title;
+    els.cardSub.textContent = sub || '';
+    els.jobcard.classList.remove('hidden');
+    cardT = dur || 3.4;
+  }
+
+  function prompt(html) {
+    if (!html) { els.prompt.classList.add('hidden'); return; }
+    els.prompt.innerHTML = html;
+    els.prompt.classList.remove('hidden');
+  }
+
+  function setRadio(html) {
+    radioText = html;
+    els.radio.innerHTML = html || '';
+    els.radio.classList.toggle('hidden', !html);
+  }
+
+  function showEnd(kind, sub) {
+    els.endTitle.textContent = kind;
+    els.endSub.textContent = sub;
+    els.end.classList.remove('hidden');
+  }
+  function hideEnd() { els.end.classList.add('hidden'); }
+
+  function drawMinimap(G) {
+    const ctx = mapCtx, S = 196, C = S / 2, RANGE = 125;
+    const p = G.playerPos();
+    const w2m = (wx, wz) => [C + (wx - p.x) * (C / RANGE), C + (wz - p.z) * (C / RANGE)];
+    ctx.fillStyle = '#241a3e'; ctx.fillRect(0, 0, S, S);
+    // Sea and beach to the south.
+    ctx.fillStyle = '#274b73';
+    let [, seaY] = w2m(0, LAYOUT.seaZ); ctx.fillRect(0, seaY, S, S - seaY);
+    ctx.fillStyle = '#d9b77c';
+    let [, beachY] = w2m(0, LAYOUT.beachZ); ctx.fillRect(0, beachY, S, Math.max(0, seaY - beachY));
+    // Blocks and roads.
+    ctx.fillStyle = '#3c3f4a';
+    for (const bx of LAYOUT.cols) for (const bz of LAYOUT.rows) {
+      const [x, y] = w2m(bx - 29, bz - 29);
+      ctx.fillRect(x, y, 58 * C / RANGE, 58 * C / RANGE);
+    }
+    ctx.fillStyle = '#ffb347';
+    const [plx, ply] = w2m(LAYOUT.plaza.x - 29, LAYOUT.plaza.z - 29);
+    ctx.fillRect(plx, ply, 58 * C / RANGE, 58 * C / RANGE);
+    // Blips: packages, shops, police, then the objective, then the player.
+    const dot = (wx, wz, color, r) => {
+      const [x, y] = w2m(wx, wz);
+      if (x < -6 || y < -6 || x > S + 6 || y > S + 6) return;
+      ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
     };
-    this.bannerUntil = 0; this.dialogueUntil = 0; this.toastUntil = 0;
-    this.lastStars = 0; this.starPulseAt = 0;
-    // Paint the static minimap layer once: land, water, beach, roads, shops.
-    this.mapBase = document.createElement('canvas');
-    this.mapBase.width = MAP.w; this.mapBase.height = MAP.h;
-    const c = this.mapBase.getContext('2d');
-    c.fillStyle = '#274b63'; c.fillRect(0, 0, MAP.w, MAP.h);
-    c.fillStyle = '#57503f'; c.fillRect(0, 0, MAP.w, mz(216));
-    c.fillStyle = '#d9b77c'; c.fillRect(0, mz(168), MAP.w, mz(216) - mz(168));
-    c.strokeStyle = '#26282e'; c.lineWidth = 5;
-    for (const x of AVENUES_X) { c.beginPath(); c.moveTo(mx(x), 0); c.lineTo(mx(x), mz(216)); c.stroke(); }
-    for (const z of STREETS_Z) { c.beginPath(); c.moveTo(0, mz(z)); c.lineTo(MAP.w, mz(z)); c.stroke(); }
-    c.fillStyle = '#ffd94d';
-    for (const s of SHOPS) { c.fillRect(mx(s.door.x) - 2, mz(s.door.z) - 2, 4, 4); }
-    this.mapCtx = $('minimap').getContext('2d');
-  }
-  show() { this.el.hud.classList.remove('hidden'); }
-  banner(title, sub = '', seconds = 3.4) {
-    this.el.bannerTitle.textContent = title;
-    this.el.bannerSub.textContent = sub;
-    this.el.banner.classList.remove('hidden');
-    this.bannerUntil = performance.now() + seconds * 1000;
-  }
-  dialogue(who, text, seconds = 4.2) {
-    this.el.dialogueWho.textContent = who;
-    this.el.dialogueText.textContent = text;
-    this.el.dialogue.classList.remove('hidden');
-    this.dialogueUntil = performance.now() + seconds * 1000;
-  }
-  toast(text, seconds = 2.2) {
-    this.el.toast.textContent = text;
-    this.el.toast.classList.remove('hidden');
-    this.toastUntil = performance.now() + seconds * 1000;
-  }
-  setInteract(text) {
-    if (!text) { this.el.interact.classList.add('hidden'); return; }
-    this.el.interact.textContent = text;
-    this.el.interact.classList.remove('hidden');
-  }
-  update(G) {
-    const now = performance.now(), el = this.el;
-    if (now > this.bannerUntil) el.banner.classList.add('hidden');
-    if (now > this.dialogueUntil) el.dialogue.classList.add('hidden');
-    if (now > this.toastUntil) el.toast.classList.add('hidden');
-    el.cash.textContent = fmtCash(G.cash);
-    const stars = G.police.stars();
-    if (stars !== this.lastStars) { this.starPulseAt = now; this.lastStars = stars; }
-    el.stars.textContent = stars ? '★'.repeat(stars) + '☆'.repeat(5 - stars) : '';
-    el.stars.style.color = G.arrestRatio > 0.03 ? '#ff5a49' : '#ffd94d';
-    const pulse = 1 + Math.max(0, 0.45 - (now - this.starPulseAt) / 1000) * 0.8;
-    el.stars.style.transform = 'scale(' + pulse.toFixed(3) + ')';
-    // BUSTED bar: fills red while an arrest is building.
-    const showArrest = G.arrestRatio > 0.02 && G.mode === 'play';
-    el.arrestWrap.style.display = showArrest ? 'block' : 'none';
-    if (showArrest) el.arrestBar.style.width = (G.arrestRatio * 100).toFixed(1) + '%';
-    el.health.style.width = clamp(G.player.health, 0, 100) + '%';
-    el.health.style.filter = G.player.health < 30 ? 'brightness(1.5)' : '';
-    el.armor.style.width = clamp(G.player.armor, 0, 100) + '%';
-    // Objective line, with the distance to the marker when there is one.
-    let obj = G.objectiveText || 'Free roam — find Pilar at Club Brisa, or make your own trouble.';
-    if (G.objectivePos) {
-      const px = G.player.onFoot ? G.player.x : G.player.car.x;
-      const pz = G.player.onFoot ? G.player.z : G.player.car.z;
-      obj += ' · ' + fmtDist(dist2d(px, pz, G.objectivePos.x, G.objectivePos.z));
+    for (const spot of G.remainingPackages()) dot(spot.x, spot.z, '#4ecdc4', 2.4);
+    for (const s of G.world.shops) dot(s.x, s.z, '#ffffff', 2.2);
+    for (const c of G.police.cars) dot(c.pos.x, c.pos.z, '#6db3ff', 3);
+    for (const o of G.police.officers) if (!o.dead) dot(o.pos.x, o.pos.z, '#bcd8ff', 2);
+    if (objective && objective.x !== null && objective.x !== undefined) {
+      let [x, y] = w2m(objective.x, objective.z);
+      x = Math.max(10, Math.min(S - 10, x)); y = Math.max(10, Math.min(S - 10, y));
+      ctx.fillStyle = '#ffd23e';
+      ctx.save(); ctx.translate(x, y); ctx.rotate(Math.PI / 4); ctx.fillRect(-5, -5, 10, 10); ctx.restore();
+      ctx.strokeStyle = '#000'; ctx.strokeRect(x - 5, y - 5, 10, 10);
     }
-    el.objective.textContent = obj;
-    el.progress.textContent = G.jobProgress || '';
-    el.crosshair.style.display = G.player.onFoot && G.mode === 'play' ? 'block' : 'none';
-    if (G.player.onFoot) { el.speed.textContent = ''; el.vehicle.textContent = ''; }
-    else {
-      const kmh = Math.round(Math.abs(G.player.car.speed) * 3.6);
-      el.speed.innerHTML = kmh + ' <small>km/h</small>';
-      el.vehicle.textContent = G.player.car.spec.name + (G.player.car.health < 45 ? ' — smoking!' : '');
-    }
-    this.drawMinimap(G);
+    // Player arrow, pointing along the player's heading.
+    ctx.save(); ctx.translate(C, C); ctx.rotate(-G.playerHeading());
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.moveTo(0, 8); ctx.lineTo(5.5, -6); ctx.lineTo(0, -3); ctx.lineTo(-5.5, -6); ctx.closePath(); ctx.fill();
+    ctx.restore();
   }
-  drawMinimap(G) {
-    const c = this.mapCtx;
-    c.drawImage(this.mapBase, 0, 0);
-    const px = G.player.onFoot ? G.player.x : G.player.car.x;
-    const pz = G.player.onFoot ? G.player.z : G.player.car.z;
-    // objective marker (pulsing gold ring)
-    if (G.objectivePos) {
-      const r = 4 + Math.sin(performance.now() * 0.006) * 1.4;
-      c.strokeStyle = '#ffd94d'; c.lineWidth = 2;
-      c.beginPath(); c.arc(mx(G.objectivePos.x), mz(G.objectivePos.z), r, 0, 6.29); c.stroke();
-      c.fillStyle = '#ffd94d';
-      c.fillRect(mx(G.objectivePos.x) - 1.5, mz(G.objectivePos.z) - 1.5, 3, 3);
+
+  function update(G, dt) {
+    if (dlgT > 0) { dlgT -= dt; if (dlgT <= 0) els.dialogue.classList.add('hidden'); }
+    if (cardT > 0) { cardT -= dt; if (cardT <= 0) els.jobcard.classList.add('hidden'); }
+    const st = G.police.stars;
+    if (st !== lastStars) {
+      lastStars = st;
+      els.stars.innerHTML = Array.from({ length: 5 }, (_, i) =>
+        `<span class="${i < st ? 'lit' : ''}">★</span>`).join('');
     }
-    // unfound packages near the player (faint green)
-    if (G.missions) {
-      c.fillStyle = 'rgba(57,255,136,0.65)';
-      for (const p of G.missions.packages.values()) {
-        if (p.taken || Math.abs(p.x - px) > 130 || Math.abs(p.z - pz) > 130) continue;
-        c.fillRect(mx(p.x) - 1.2, mz(p.z) - 1.2, 2.4, 2.4);
-      }
-    }
-    // traffic dots near the player
-    c.fillStyle = 'rgba(240,240,240,0.75)';
-    for (const car of G.traffic.cars) {
-      if (car.driver !== 'traffic') continue;
-      if (Math.abs(car.x - px) > 130 || Math.abs(car.z - pz) > 130) continue;
-      c.fillRect(mx(car.x) - 1, mz(car.z) - 1, 2, 2);
-    }
-    // police dots, and the helicopter as a white cross
-    c.fillStyle = '#3a6bff';
-    for (const car of G.police.cars) { c.beginPath(); c.arc(mx(car.x), mz(car.z), 2.6, 0, 6.29); c.fill(); }
-    if (G.police.heliActive) {
-      const hx = mx(G.police.heli.position.x), hz = mz(G.police.heli.position.z);
-      c.strokeStyle = '#ffffff'; c.lineWidth = 1.6;
-      c.beginPath(); c.moveTo(hx - 4, hz); c.lineTo(hx + 4, hz); c.moveTo(hx, hz - 4); c.lineTo(hx, hz + 4); c.stroke();
-    }
-    // player arrow
-    const a = G.player.onFoot ? G.player.angle : G.player.car.angle;
-    c.save();
-    c.translate(mx(px), mz(pz)); c.rotate(a);
-    c.fillStyle = '#ff5a49';
-    c.beginPath(); c.moveTo(0, -6); c.lineTo(4, 5); c.lineTo(0, 2.6); c.lineTo(-4, 5); c.closePath(); c.fill();
-    c.restore();
-    c.fillStyle = '#fff'; c.font = 'bold 9px Arial'; c.fillText('N', MAP.w - 11, 11);
+    if (G.cash !== lastCash) { lastCash = G.cash; els.cash.textContent = fmtMoney(G.cash); }
+    els.healthfill.style.width = Math.max(0, G.health) + '%';
+    const b = G.police.busted01;
+    els.bustedwrap.style.opacity = b > 0.02 ? '1' : '0';
+    els.bustedfill.style.width = (b * 100) + '%';
+    els.vignette.style.opacity = String(G.vignette || 0);
+    if (G.playerInCar()) {
+      const kmh = Math.round(Math.abs(G.playerCar().speed) * 3.6);
+      els.speedo.textContent = kmh + ' km/h · ' + G.playerCar().spec.name;
+    } else els.speedo.textContent = '';
+    if (objective && objective.x !== null && objective.x !== undefined) {
+      const p = G.playerPos();
+      const d = Math.hypot(objective.x - p.x, objective.z - p.z);
+      els.objDist.textContent = '▸ ' + Math.round(d) + ' m';
+    } else els.objDist.textContent = '';
+    drawMinimap(G);
   }
+
+  function raceShow(title, info) {
+    els.raceTitle.textContent = title;
+    els.raceInfo.textContent = info;
+    els.racebox.classList.remove('hidden');
+  }
+  function raceHide() { els.racebox.classList.add('hidden'); }
+
+  return {
+    els, showGameUI, setObjective, toast, dialogue, hideDialogue, jobCard, prompt,
+    setRadio, showEnd, hideEnd, update, raceShow, raceHide,
+    fade(on) { els.fade.style.opacity = on ? '1' : '0'; },
+    raceInfo: (t) => { els.raceInfo.textContent = t; },
+    fmtTime,
+  };
 }
