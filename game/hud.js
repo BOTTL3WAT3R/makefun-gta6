@@ -1,9 +1,11 @@
-// hud.js — everything the player reads: cash, wanted stars, health bars,
-// objective line, job banners, dialogue, toasts, and the minimap (a static
-// painted map layer with live dots for player, police, traffic, objective).
+// hud.js — everything the player reads: cash, wanted stars with a BUSTED
+// progress bar, health and armor, the objective line with a live distance
+// readout, job banners, dialogue, toasts, and the minimap (a static painted
+// map layer with live dots for player, police, traffic, the helicopter,
+// packages and the objective).
 
 import { AVENUES_X, STREETS_Z, SHOPS } from './world.js';
-import { clamp, fmtCash } from './util.js';
+import { clamp, fmtCash, fmtDist, dist2d } from './util.js';
 
 const $ = id => document.getElementById(id);
 const MAP = { x0: -260, x1: 260, z0: -230, z1: 230, w: 200, h: 200 };
@@ -19,8 +21,10 @@ export class Hud {
       banner: $('banner'), bannerTitle: $('banner-title'), bannerSub: $('banner-sub'),
       dialogue: $('dialogue'), dialogueWho: $('dialogue-who'), dialogueText: $('dialogue-text'),
       toast: $('toast'), interact: $('interact'), crosshair: $('crosshair'),
+      arrestWrap: $('arrest-wrap'), arrestBar: $('arrest-bar'),
     };
     this.bannerUntil = 0; this.dialogueUntil = 0; this.toastUntil = 0;
+    this.lastStars = 0; this.starPulseAt = 0;
     // Paint the static minimap layer once: land, water, beach, roads, shops.
     this.mapBase = document.createElement('canvas');
     this.mapBase.width = MAP.w; this.mapBase.height = MAP.h;
@@ -65,11 +69,26 @@ export class Hud {
     if (now > this.toastUntil) el.toast.classList.add('hidden');
     el.cash.textContent = fmtCash(G.cash);
     const stars = G.police.stars();
+    if (stars !== this.lastStars) { this.starPulseAt = now; this.lastStars = stars; }
     el.stars.textContent = stars ? '★'.repeat(stars) + '☆'.repeat(5 - stars) : '';
     el.stars.style.color = G.arrestRatio > 0.03 ? '#ff5a49' : '#ffd94d';
+    const pulse = 1 + Math.max(0, 0.45 - (now - this.starPulseAt) / 1000) * 0.8;
+    el.stars.style.transform = 'scale(' + pulse.toFixed(3) + ')';
+    // BUSTED bar: fills red while an arrest is building.
+    const showArrest = G.arrestRatio > 0.02 && G.mode === 'play';
+    el.arrestWrap.style.display = showArrest ? 'block' : 'none';
+    if (showArrest) el.arrestBar.style.width = (G.arrestRatio * 100).toFixed(1) + '%';
     el.health.style.width = clamp(G.player.health, 0, 100) + '%';
+    el.health.style.filter = G.player.health < 30 ? 'brightness(1.5)' : '';
     el.armor.style.width = clamp(G.player.armor, 0, 100) + '%';
-    el.objective.textContent = G.objectiveText || 'Free roam — find Pilar at Club Brisa, or make your own trouble.';
+    // Objective line, with the distance to the marker when there is one.
+    let obj = G.objectiveText || 'Free roam — find Pilar at Club Brisa, or make your own trouble.';
+    if (G.objectivePos) {
+      const px = G.player.onFoot ? G.player.x : G.player.car.x;
+      const pz = G.player.onFoot ? G.player.z : G.player.car.z;
+      obj += ' · ' + fmtDist(dist2d(px, pz, G.objectivePos.x, G.objectivePos.z));
+    }
+    el.objective.textContent = obj;
     el.progress.textContent = G.jobProgress || '';
     el.crosshair.style.display = G.player.onFoot && G.mode === 'play' ? 'block' : 'none';
     if (G.player.onFoot) { el.speed.textContent = ''; el.vehicle.textContent = ''; }
@@ -93,6 +112,14 @@ export class Hud {
       c.fillStyle = '#ffd94d';
       c.fillRect(mx(G.objectivePos.x) - 1.5, mz(G.objectivePos.z) - 1.5, 3, 3);
     }
+    // unfound packages near the player (faint green)
+    if (G.missions) {
+      c.fillStyle = 'rgba(57,255,136,0.65)';
+      for (const p of G.missions.packages.values()) {
+        if (p.taken || Math.abs(p.x - px) > 130 || Math.abs(p.z - pz) > 130) continue;
+        c.fillRect(mx(p.x) - 1.2, mz(p.z) - 1.2, 2.4, 2.4);
+      }
+    }
     // traffic dots near the player
     c.fillStyle = 'rgba(240,240,240,0.75)';
     for (const car of G.traffic.cars) {
@@ -100,9 +127,14 @@ export class Hud {
       if (Math.abs(car.x - px) > 130 || Math.abs(car.z - pz) > 130) continue;
       c.fillRect(mx(car.x) - 1, mz(car.z) - 1, 2, 2);
     }
-    // police dots
+    // police dots, and the helicopter as a white cross
     c.fillStyle = '#3a6bff';
     for (const car of G.police.cars) { c.beginPath(); c.arc(mx(car.x), mz(car.z), 2.6, 0, 6.29); c.fill(); }
+    if (G.police.heliActive) {
+      const hx = mx(G.police.heli.position.x), hz = mz(G.police.heli.position.z);
+      c.strokeStyle = '#ffffff'; c.lineWidth = 1.6;
+      c.beginPath(); c.moveTo(hx - 4, hz); c.lineTo(hx + 4, hz); c.moveTo(hx, hz - 4); c.lineTo(hx, hz + 4); c.stroke();
+    }
     // player arrow
     const a = G.player.onFoot ? G.player.angle : G.player.car.angle;
     c.save();

@@ -7,3 +7,7 @@ node_modules/
 # Scratch logs and throwaway captures from local play-testing.
 *.log
 .tmp/
+
+# Raw screenshot staging captures — only the finished renders in
+# screenshots/ are part of the entry.
+shots-raw/

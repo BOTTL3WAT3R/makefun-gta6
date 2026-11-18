@@ -12,6 +12,8 @@ const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const requested = portIndex === -1 ? 8080 : Number(args[portIndex + 1]);
 const port = Number.isInteger(requested) && requested > 0 && requested < 65536 ? requested : 8080;
+const hostIndex = args.indexOf('--host');
+const host = hostIndex === -1 ? '127.0.0.1' : String(args[hostIndex + 1] || '127.0.0.1');
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -66,7 +68,9 @@ createServer((request, response) => {
     'content-length': size,
     'cache-control': 'no-store',
   });
+  // HEAD answers with the same headers and no body, for link checkers.
+  if (request.method === 'HEAD') { response.end(); return; }
   createReadStream(file).pipe(response);
-}).listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
+}).listen(port, host, () => {
+  console.log(`Golden Hour — game/ is on http://${host}:${port}`);
 });

@@ -9,13 +9,21 @@
 // Away from the grader, MAKEFUN_OUTPUT_DIR stands in for /output:
 //   mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 
-import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const out = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+
+// Fail loudly rather than hand in a hollow entry: the game and at least
+// three screenshots must be on disk before anything is copied across.
+if (!existsSync(join(here, 'game', 'index.html')))
+  throw new Error('game/index.html is missing — there is no game to hand in');
+const shotCount = existsSync(join(here, 'screenshots'))
+  ? readdirSync(join(here, 'screenshots')).filter(f => /\.(png|jpe?g)$/i.test(f)).length : 0;
+if (shotCount < 3) throw new Error(`screenshots/ holds ${shotCount} image(s) — the dossier needs at least 3`);
 
 mkdirSync(out, { recursive: true });
 cpSync(join(here, 'game'), join(out, 'game'), { recursive: true });
@@ -34,3 +42,10 @@ const dossierLimits = {
   game_path_max_bytes: 1000,
 };
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, dossierLimits));
+
+// A one-line receipt on the console (never in the output tree, so two runs
+// stay byte-identical): how many game files were handed in, and their size.
+const gameFiles = readdirSync(join(out, 'game'), { recursive: true })
+  .filter(f => statSync(join(out, 'game', String(f))).isFile());
+const gameBytes = gameFiles.reduce((n, f) => n + statSync(join(out, 'game', String(f))).size, 0);
+console.log(`golden-hour: handed in ${gameFiles.length} game files (${gameBytes} bytes) and ${shotCount} screenshots`);

@@ -14,6 +14,7 @@
 
 <!-- In-game HUD -->
 <div id="hud" class="hidden">
+  <div id="hurt"></div>
   <div id="hud-left">
     <canvas id="minimap" width="200" height="200"></canvas>
     <div id="objective"><span id="objective-label">OBJECTIVE</span><span id="objective-text"></span></div>
@@ -21,6 +22,7 @@
   <div id="hud-right">
     <div id="cash">$0</div>
     <div id="stars"></div>
+    <div id="arrest-wrap"><span id="arrest-label">BUSTED</span><div id="arrest-track"><div id="arrest-bar"></div></div></div>
     <div id="radio-name"></div>
   </div>
   <div id="hud-bottom-left">
@@ -45,13 +47,14 @@
     <h1>GOLDEN HOUR</h1>
     <p class="tagline">Costa Vera. One sunset, one briefcase, one way up.</p>
     <p class="story">You are <b>Nico Ferrer</b>, a nobody with a borrowed scooter and a debt.
-      Fixer <b>Pilar Duarte</b> offers a ladder: run her errands, steal what she points at,
-      out-drive the Policía del Sol, and take the crown job at golden hour —
-      or stay a nobody on the boardwalk forever.</p>
+      Fixer <b>Pilar Duarte</b> offers a ladder: seven jobs — run her errands, steal what she
+      points at, out-drive the Policía del Sol, take the crown job at golden hour, and ride
+      shotgun for the queen herself on the last tide — or stay a nobody on the boardwalk forever.</p>
     <div class="controls">
       <div><b>W A S D</b> move / drive</div><div><b>Mouse</b> look &nbsp; <b>Click</b> shoot (on foot)</div>
       <div><b>E</b> enter / steal car, use shop</div><div><b>Shift</b> sprint &nbsp; <b>Space</b> handbrake / hop</div>
       <div><b>R</b> radio station &nbsp; <b>M</b> mute</div><div><b>P / Esc</b> pause</div>
+      <div><b>Side work</b> taxi fares · Boardwalk Run · Gran Vuelta</div><div><b>15</b> hidden packages in the city</div>
     </div>
     <button id="btn-start">Start — a new life in Costa Vera</button>
     <button id="btn-continue" class="hidden">Continue — pick up where you left off</button>

@@ -1,6 +1,7 @@
 // audio.js — every sound in Golden Hour is synthesized with WebAudio: three
-// procedural radio stations (a tiny step sequencer), an engine voice tied to
-// the player's car, a two-tone police siren, and one-shot effects.
+// procedural radio stations (a tiny step sequencer), an engine voice tied
+// to the player's car, a two-tone police siren, the helicopter's rotor
+// wash, a soft sea-breeze ambience bed, and one-shot effects.
 
 const STATIONS = [
   { name: 'ONDA 98 — chill', bpm: 76, wave: 'triangle',
@@ -9,6 +10,8 @@ const STATIONS = [
     bass: [0, 0, -1, 0, 0, -1, 0, 5], lead: [12, -1, 12, 15, -1, 12, -1, 10, 12, -1, 12, 15, 17, -1, 15, 12], root: 98 },
   { name: 'SOL FM — golden', bpm: 96, wave: 'square',
     bass: [0, -1, 4, -1, 5, -1, 4, -1], lead: [16, -1, -1, 14, -1, 12, -1, -1, 9, -1, 12, -1, 14, -1, -1, -1], root: 130.81 },
+  { name: 'FARO NOCTURNA — synth', bpm: 104, wave: 'sawtooth',
+    bass: [0, -1, -1, 7, -1, -1, 5, -1], lead: [19, -1, 17, -1, 16, -1, 14, -1, 12, -1, 14, -1, 16, -1, -1, -1], root: 87.31 },
 ];
 const SCALE = [0, 2, 3, 5, 7, 8, 10]; // minor scale steps for lead lines
 const noteHz = (root, steps) => root * Math.pow(2, steps / 12);
@@ -18,6 +21,7 @@ export class AudioSys {
   constructor() {
     this.ctx = null; this.muted = false; this.station = 0;
     this.radioOn = false; this.step = 0; this.nextStepAt = 0;
+    this.heliLevel = 0;
   }
   init() {
     if (this.ctx) { this.ctx.resume(); return; }
@@ -43,6 +47,23 @@ export class AudioSys {
     const len = ctx.sampleRate * 0.5, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
     this.noiseBuf = buf;
+    // Sea-breeze ambience: looped noise through a slow-breathing lowpass.
+    const sea = ctx.createBufferSource(); sea.buffer = buf; sea.loop = true;
+    this.seaFilter = ctx.createBiquadFilter(); this.seaFilter.type = 'lowpass'; this.seaFilter.frequency.value = 420;
+    this.seaGain = ctx.createGain(); this.seaGain.gain.value = 0.016;
+    sea.connect(this.seaFilter); this.seaFilter.connect(this.seaGain); this.seaGain.connect(this.master);
+    sea.start();
+    // Helicopter rotor: a chopping amplitude gate over brown-ish noise.
+    const rotor = ctx.createBufferSource(); rotor.buffer = buf; rotor.loop = true; rotor.playbackRate.value = 0.4;
+    const rotorFilter = ctx.createBiquadFilter(); rotorFilter.type = 'bandpass'; rotorFilter.frequency.value = 300; rotorFilter.Q.value = 0.7;
+    this.rotorGain = ctx.createGain(); this.rotorGain.gain.value = 0;
+    this.rotorChop = ctx.createGain(); this.rotorChop.gain.value = 0.6;
+    const chopOsc = ctx.createOscillator(); chopOsc.type = 'square'; chopOsc.frequency.value = 11;
+    const chopDepth = ctx.createGain(); chopDepth.gain.value = 0.4;
+    chopOsc.connect(chopDepth); chopDepth.connect(this.rotorChop.gain);
+    rotor.connect(rotorFilter); rotorFilter.connect(this.rotorChop); this.rotorChop.connect(this.rotorGain);
+    this.rotorGain.connect(this.master);
+    rotor.start(); chopOsc.start();
   }
   toggleMute() { this.muted = !this.muted; if (this.master) this.master.gain.value = this.muted ? 0 : 0.55; return this.muted; }
   stationName() { return STATIONS[this.station].name; }
@@ -62,10 +83,17 @@ export class AudioSys {
     if (!this.ctx) return;
     this.sirenGain.gain.setTargetAtTime(level * 0.028, this.ctx.currentTime, 0.15);
   }
+  setHeliLevel(level) { // 0..1 by helicopter presence/distance
+    this.heliLevel = level;
+    if (!this.ctx) return;
+    this.rotorGain.gain.setTargetAtTime(level * 0.12, this.ctx.currentTime, 0.25);
+  }
   update(dt) {
     if (!this.ctx) return;
     this.sirenFlip += dt;
     if (this.sirenFlip > 0.42) { this.sirenFlip = 0; this.sirenOsc.frequency.value = this.sirenOsc.frequency.value > 800 ? 690 : 955; }
+    // the breeze breathes on a slow cycle
+    this.seaFilter.frequency.value = 380 + Math.sin(this.ctx.currentTime * 0.13) * 130;
     if (!this.radioOn || this.muted) return;
     const st = STATIONS[this.station], spb = 60 / st.bpm / 2; // eighth notes
     while (this.nextStepAt < this.ctx.currentTime + 0.12) {

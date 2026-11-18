@@ -1,6 +1,7 @@
-// main.js — Golden Hour's wiring: renderer, camera, input, the game-state
-// object every system shares, entering and stealing cars, busted / wasted /
-// ending flow, saving, and the main loop.
+// main.js — Golden Hour's wiring: renderer, camera (smoothed chase and
+// on-foot rigs, speed FOV, impact shake), input, the game-state object
+// every system shares, entering and stealing cars, busted / wasted /
+// ending flow, the hurt vignette, saving, and the main loop.
 
 import * as THREE from 'three';
 import { buildWorld, LOCATIONS } from './world.js';
@@ -8,10 +9,10 @@ import { TrafficSystem, makeCar, stepDrive, stepCarCollisions } from './vehicles
 import { PeopleSystem, makePersonMesh, stepPlayerOnFoot } from './people.js';
 import { PoliceSystem } from './police.js';
 import { Combat } from './combat.js';
-import { Missions } from './missions.js';
+import { Missions, STORY_COUNT } from './missions.js';
 import { Hud } from './hud.js';
 import { AudioSys } from './audio.js';
-import { clamp, dist2d } from './util.js';
+import { clamp, dist2d, dampFactor } from './util.js';
 
 const SAVE_KEY = 'golden-hour-save-v1';
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -20,7 +21,8 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.12;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
 document.getElementById('app').appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -31,6 +33,7 @@ const G = {
   mode: 'menu', cash: 120, objectiveText: '', objectivePos: null, jobProgress: '',
   arrestRatio: 0, danger: null, events: [], packagesFound: new Set(), raceBest: 0,
   camYaw: Math.PI, camPitch: 0.34, aiming: false, camera, scene,
+  hurtT: 0, shake: 0,
 };
 G.audio = new AudioSys();
 G.hud = new Hud();
@@ -79,7 +82,7 @@ function loadSaveData() {
 }
 function applySave(d) {
   G.cash = d.cash | 0;
-  G.missions.storyIndex = Math.min(d.story | 0, 6);
+  G.missions.storyIndex = Math.min(d.story | 0, STORY_COUNT);
   G.packagesFound = new Set(d.packages || []);
   G.raceBest = d.raceBest || 0;
   if (d.pos) { G.player.x = d.pos[0]; G.player.z = d.pos[1]; }
@@ -95,7 +98,7 @@ function endRun(title, text, respawn) {
   $('over-text').textContent = text;
   $('menu-over').classList.remove('hidden');
   G.pendingRespawn = respawn;
-  G.audio.setEngine(false, 0, 0); G.audio.setRadio(false); G.audio.setSirenLevel(0);
+  G.audio.setEngine(false, 0, 0); G.audio.setRadio(false); G.audio.setSirenLevel(0); G.audio.setHeliLevel(0);
 }
 G.onBusted = () => {
   const fine = Math.min(G.cash, Math.max(40, Math.round(G.cash * 0.12)));
@@ -116,8 +119,8 @@ G.onWasted = () => {
 G.onEnding = () => {
   G.mode = 'end';
   world.setDusk(0.3);
-  $('end-text').textContent = 'Six jobs, one crown case, and a yacht at golden hour. ' +
-    'Cash earned, debts settled — Costa Vera is yours now: ' + '$' + G.cash.toLocaleString('en-US') +
+  $('end-text').textContent = 'Seven jobs, one crown case, one last tide. ' +
+    'Cash earned, debts settled, Vega beached — Costa Vera is yours now: ' + '$' + G.cash.toLocaleString('en-US') +
     ' in hand, ' + G.packagesFound.size + '/15 packages found. Free roam is open.';
   $('menu-end').classList.remove('hidden');
   G.save();
@@ -201,7 +204,7 @@ function pauseGame() {
   G.mode = 'pause';
   document.exitPointerLock && document.exitPointerLock();
   $('pause-stats').textContent = 'Cash $' + G.cash.toLocaleString('en-US') +
-    ' · Story job ' + Math.min(G.missions.storyIndex + 1, 6) + '/6 · Packages ' +
+    ' · Story job ' + Math.min(G.missions.storyIndex + 1, STORY_COUNT) + '/' + STORY_COUNT + ' · Packages ' +
     G.packagesFound.size + '/15' + (G.raceBest ? ' · Best race ' + G.raceBest.toFixed(1) + 's' : '');
   $('menu-pause').classList.remove('hidden');
 }
@@ -238,6 +241,7 @@ addEventListener('resize', () => {
 // ---- per-frame systems ----
 const input = { f: 0, b: 0, l: 0, r: 0, sprint: 0, jump: 0 };
 let crimeThrottle = 0, autosaveT = 0;
+const hurtEl = $('hurt');
 function handleEvents(dt) {
   crimeThrottle -= dt;
   for (const ev of G.events) {
@@ -254,6 +258,7 @@ function onCarImpact(a, b, rel) {
   const mine = !P.onFoot && (a === P.car || b === P.car);
   const other = a === P.car ? b : a;
   if (rel > 5 && (mine || dist2d(a.x, a.z, P.x, P.z) < 26)) G.audio.crash(rel > 11);
+  if (mine && rel > 6) G.shake = Math.min(0.5, G.shake + (rel - 6) * 0.03);
   if (mine && crimeThrottle <= 0) {
     crimeThrottle = 1.6;
     if (other.driver === 'police') G.reportCrime('copHit', other.x, other.z);
@@ -276,7 +281,7 @@ function step(dt) {
     const throttle = input.f ? 1 : input.b ? -1 : 0;
     const steer = (input.l ? 1 : 0) - (input.r ? 1 : 0);
     const before = car.hitWall || 0;
-    stepDrive(car, throttle, steer * (keys.Space ? 1 : 1), !!keys.Space, dt, world.colliders);
+    stepDrive(car, throttle, steer, !!keys.Space, dt, world.colliders);
     if ((car.hitWall || 0) > 10 && before === 0) {
       G.audio.crash(car.hitWall > 16);
       G.combat.damagePlayer(G, (car.hitWall - 10) * 0.5);
@@ -310,38 +315,59 @@ function step(dt) {
   G.audio.update(dt);
   world.sun.position.set(P.x - 90, 120, P.z - 55);
   world.sun.target.position.set(P.x, 0, P.z);
+  // hurt vignette: a fresh hit flashes, low health keeps a slow pulse
+  const sinceHit = (performance.now() - G.hurtT) / 1000;
+  let hurt = sinceHit < 0.5 ? (0.5 - sinceHit) * 1.1 : 0;
+  if (P.health < 25 && G.mode === 'play') hurt = Math.max(hurt, 0.16 + Math.sin(performance.now() * 0.006) * 0.07);
+  hurtEl.style.opacity = clamp(hurt, 0, 0.55).toFixed(3);
   autosaveT += dt;
   if (autosaveT > 15) { autosaveT = 0; G.save(); }
 }
+const camGoal = new THREE.Vector3();
+let camSnapped = false;
 function updateCamera(dt) {
   const P = G.player;
   if (G.camOverride) {
     const o = G.camOverride;
     camera.position.set(o.pos[0], o.pos[1], o.pos[2]);
     camera.lookAt(o.look[0], o.look[1], o.look[2]);
+    camSnapped = false;
     return;
   }
   if (G.mode === 'menu') { // slow showcase orbit over the coast
     const t = performance.now() * 0.00005;
     camera.position.set(Math.sin(t) * 190, 60, 120 + Math.cos(t) * 60);
     camera.lookAt(0, 8, 60);
+    camSnapped = false;
     return;
   }
+  let lookX, lookY, lookZ, wantFov = 62;
   if (P.onFoot || !P.car) {
     const d = 7.6, cp = Math.cos(G.camPitch), sp = Math.sin(G.camPitch);
-    const tx = P.x - Math.sin(G.camYaw) * cp * d;
-    const tz = P.z - Math.cos(G.camYaw) * cp * d;
-    const ty = P.y + 1.8 + sp * d;
-    camera.position.set(tx, Math.max(ty, 0.7), tz);
-    camera.lookAt(P.x, P.y + 1.55, P.z);
+    camGoal.set(P.x - Math.sin(G.camYaw) * cp * d, Math.max(P.y + 1.8 + sp * d, 0.7), P.z - Math.cos(G.camYaw) * cp * d);
+    lookX = P.x; lookY = P.y + 1.55; lookZ = P.z;
+    if (!camSnapped || camera.position.distanceTo(camGoal) > 40) { camera.position.copy(camGoal); camSnapped = true; }
+    else camera.position.lerp(camGoal, dampFactor(16, dt));
   } else {
     const car = P.car;
     const fx = Math.sin(car.angle), fz = Math.cos(car.angle);
-    const want = new THREE.Vector3(car.x - fx * 10.5, 4.3, car.z - fz * 10.5);
-    camera.position.lerp(want, 1 - Math.exp(-dt * 4.2));
-    if (camera.position.y < 1.2) camera.position.y = 1.2;
-    camera.lookAt(car.x + fx * 7, 1.5, car.z + fz * 7);
+    camGoal.set(car.x - fx * 10.5, 4.3, car.z - fz * 10.5);
+    if (camGoal.y < 1.2) camGoal.y = 1.2;
+    if (!camSnapped || camera.position.distanceTo(camGoal) > 40) { camera.position.copy(camGoal); camSnapped = true; }
+    else camera.position.lerp(camGoal, 1 - Math.exp(-dt * 4.6));
+    lookX = car.x + fx * 7; lookY = 1.5; lookZ = car.z + fz * 7;
     G.camYaw = car.angle;
+    wantFov = 62 + clamp(Math.abs(car.speed) / car.spec.topSpeed, 0, 1) * 9; // speed stretches the view
+  }
+  if (Math.abs(camera.fov - wantFov) > 0.05) {
+    camera.fov += (wantFov - camera.fov) * dampFactor(5, dt);
+    camera.updateProjectionMatrix();
+  }
+  camera.lookAt(lookX, lookY, lookZ);
+  if (G.shake > 0.003) { // impact shake, decaying
+    camera.position.x += (Math.random() - 0.5) * G.shake;
+    camera.position.y += (Math.random() - 0.5) * G.shake * 0.7;
+    G.shake *= Math.exp(-dt * 7);
   }
 }
 
@@ -369,6 +395,8 @@ window.GH = {
   setHeat(n) { G.police.heat = n; },
   cops(n) { for (let i = 0; i < n; i++) G.police.spawnCop(G); },
   startJob(i) { G.missions.startJob(G, i); },
+  startTour() { G.missions.startTour(G); },
+  startRace() { G.missions.startRace(G); },
   dusk(f) { world.setDusk(f); },
   enterNearest() { const c = nearestEnterableCar(); if (c) enterCar(c); return !!c; },
   freeze(v) { G.frozen = !!v; },

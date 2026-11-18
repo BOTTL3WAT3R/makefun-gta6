@@ -7,15 +7,22 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #fff
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+#hurt { position: absolute; inset: 0; opacity: 0; pointer-events: none;
+  background: radial-gradient(ellipse at center, rgba(200,20,20,0) 46%, rgba(200,20,20,.5) 100%); }
 #hud-left { position: absolute; top: 14px; left: 14px; width: 200px; }
 #minimap { width: 200px; height: 200px; border: 2px solid rgba(255, 214, 150, .85); border-radius: 10px;
   box-shadow: 0 4px 18px rgba(0,0,0,.45); background: #223; }
 #objective { margin-top: 8px; background: rgba(20, 10, 16, .62); border-left: 4px solid #ffb347;
-  padding: 6px 9px; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.35; max-width: 250px; }
+  padding: 6px 9px; border-radius: 0 8px 8px 0; font-size: 13px; line-height: 1.35; max-width: 260px; }
 #objective-label { display: block; font-size: 10px; letter-spacing: 2px; color: #ffb347; font-weight: 700; }
 #hud-right { position: absolute; top: 14px; right: 16px; text-align: right; }
 #cash { font-size: 30px; font-weight: 800; color: #8dff9a; text-shadow: 0 2px 6px rgba(0,0,0,.6); }
-#stars { font-size: 26px; letter-spacing: 3px; color: #ffd94d; text-shadow: 0 0 8px rgba(255,160,0,.8); min-height: 30px; }
+#stars { font-size: 26px; letter-spacing: 3px; color: #ffd94d; text-shadow: 0 0 8px rgba(255,160,0,.8); min-height: 30px;
+  transform-origin: right center; display: inline-block; }
+#arrest-wrap { display: none; margin: 2px 0 4px auto; width: 170px; }
+#arrest-label { font-size: 10px; font-weight: 800; letter-spacing: 3px; color: #ff5a49; text-shadow: 0 1px 3px #000; }
+#arrest-track { height: 7px; background: rgba(10,6,8,.65); border: 1px solid rgba(255,90,73,.7); border-radius: 4px; overflow: hidden; }
+#arrest-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #ff9a3d, #ff3b2e); }
 #radio-name { font-size: 12px; color: #ffd9a0; letter-spacing: 1px; min-height: 15px; }
 #hud-bottom-left { position: absolute; left: 14px; bottom: 14px; width: 230px; }
 .bar-row { display: flex; align-items: center; gap: 7px; margin-top: 5px; }
@@ -32,15 +39,18 @@ body { font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif; color: #fff
   border: 2px solid rgba(255,255,255,.9); border-radius: 50%; box-shadow: 0 0 5px rgba(0,0,0,.7); }
 #interact { position: absolute; left: 50%; bottom: 21%; transform: translateX(-50%); background: rgba(20,10,16,.78);
   padding: 8px 16px; border-radius: 20px; font-size: 15px; border: 1px solid #ffb347; }
-#banner { position: absolute; left: 0; right: 0; top: 15%; text-align: center; }
+@keyframes banner-in { from { opacity: 0; transform: translateY(-16px) scale(.96); } to { opacity: 1; transform: none; } }
+@keyframes rise-in { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+#banner { position: absolute; left: 0; right: 0; top: 15%; text-align: center; animation: banner-in .38s ease-out; }
 #banner-title { font-size: 44px; font-weight: 900; letter-spacing: 4px; color: #ffe3ae;
   text-shadow: 0 3px 0 #b3401e, 0 6px 22px rgba(0,0,0,.65); text-transform: uppercase; }
 #banner-sub { font-size: 17px; color: #fff; text-shadow: 0 2px 8px #000; margin-top: 4px; }
 #dialogue { position: absolute; left: 50%; bottom: 9%; transform: translateX(-50%); width: min(640px, 86vw);
-  background: rgba(16, 8, 14, .82); border: 1px solid rgba(255, 179, 71, .6); border-radius: 10px; padding: 10px 14px; font-size: 16px; }
+  background: rgba(16, 8, 14, .82); border: 1px solid rgba(255, 179, 71, .6); border-radius: 10px; padding: 10px 14px; font-size: 16px;
+  animation: rise-in .3s ease-out; }
 #dialogue-who { display: block; font-size: 11px; letter-spacing: 2px; color: #ffb347; font-weight: 700; margin-bottom: 3px; }
 #toast { position: absolute; left: 50%; top: 26%; transform: translateX(-50%); font-size: 22px; font-weight: 700;
-  color: #aef3b0; text-shadow: 0 2px 8px #000; }
+  color: #aef3b0; text-shadow: 0 2px 8px #000; text-align: center; max-width: 86vw; }
 
 /* ---------- Overlays / menus ---------- */
 .overlay { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;

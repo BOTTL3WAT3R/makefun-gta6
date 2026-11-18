@@ -1,13 +1,14 @@
-// missions.js — the story of Nico Ferrer: six jobs for fixer Pilar Duarte,
-// chained from errand boy to the Golden Hour job, plus the city's side
-// hustle — taxi fares, the boardwalk checkpoint race, hidden packages —
-// and the three shops. Owns the objective line and the waypoint beam.
+// missions.js — the story of Nico Ferrer: seven jobs for fixer Pilar
+// Duarte, chained from errand boy to the Golden Hour job and the last
+// tide after it, plus the city's side hustle — taxi fares, the boardwalk
+// checkpoint race, the Gran Vuelta city tour, hidden packages — and the
+// three shops. Owns the objective line and the waypoint beam.
 
 import * as THREE from 'three';
 import { LOCATIONS, SHOPS } from './world.js';
 import { makeCar } from './vehicles.js';
 import { makePersonMesh } from './people.js';
-import { dist2d, clamp, fmtCash, fmtTime, rand, pick } from './util.js';
+import { dist2d, clamp, fmtCash, fmtTime, pick } from './util.js';
 
 const D = (who, text) => ({ who, text });
 const STORY = [
@@ -51,7 +52,8 @@ const STORY = [
     reward: 800,
     intro: [D('PILAR (phone)', 'Ivo, El Pulpo’s accountant, is done counting other people’s money. He waits at the Faro point parking. The Policía will object. Lose them, then the safehouse on Calle Niebla.')],
     steps: [
-      { kind: 'pickup', pos: LOCATIONS.lighthouse, r: 8, label: 'Pick up Ivo at the Faro point parking (in a car)' },
+      { kind: 'pickup', npc: 'ivo', heat: 3, who: 'IVO', line: 'Drive, drive! Half the Policía are behind us!',
+        pos: LOCATIONS.lighthouse, r: 8, label: 'Pick up Ivo at the Faro point parking (in a car)' },
       { kind: 'escape', label: 'Lose the Policía del Sol — wanted level to zero' },
       { kind: 'goto', pos: LOCATIONS.safehouse, r: 9, needCar: true, label: 'Deliver Ivo to the safehouse on Calle Niebla' },
     ],
@@ -78,14 +80,37 @@ const STORY = [
       { kind: 'goto', pos: LOCATIONS.club, r: 6, onFoot: true, label: 'Take the crown case inside Club Brisa' },
       { kind: 'goto', pos: { x: 182, z: 206 }, r: 10, label: 'Deliver the crown case to the yacht at Marina del Sol', lock: 4 },
     ],
-    outro: [D('PILAR', 'It is done. The debts, the deeds, the boardwalk — ours. Costa Vera is yours at golden hour, Nico.')],
+    outro: [D('PILAR', 'The case is mine. But a crown has a keeper, Nico — Capitán Vega of the harbour patrol, El Pulpo’s brother, still holds my yacht’s papers. One more tide to swim.')],
+  },
+  {
+    title: 'La Última Marea', sub: 'The Last Tide — Vega, the harbour patrol, and Pilar herself',
+    reward: 3000,
+    intro: [D('PILAR', 'Vega impounds the Reina del Alba at dawn and burns my club’s licence tonight — unless I reach the yacht with the harbour ledger first. I am done sending boys, Nico. Tonight you drive ME. I wait outside the club.'),
+            D('NICO', 'The queen rides shotgun. Vega picked the wrong sunset.')],
+    steps: [
+      { kind: 'pickup', npc: 'pilar', heat: 4, who: 'PILAR', line: 'Vega’s patrol was watching the club. Pity for them. DRIVE.',
+        pos: LOCATIONS.club, r: 8, label: 'Pick up Pilar outside Club Brisa (in a car)' },
+      { kind: 'escape', label: 'Shake Vega’s harbour patrol — wanted level to zero' },
+      { kind: 'goto', pos: { x: 182, z: 206 }, r: 10, needCar: true, lock: 3, label: 'Run the ledger to the yacht at Marina del Sol — Vega will cut you off' },
+    ],
+    outro: [D('VEGA (radio)', 'Stand down, Ferrer! …She is already aboard. Madre mía.'),
+            D('PILAR', 'Papers, yacht, club, crown — all of it, ours. You came to Costa Vera owing money, Nico. You leave the harbour owning it.')],
   },
 ];
+export const STORY_COUNT = STORY.length;
 const RACE_GATES = [
   { x: 120, z: 160 }, { x: 200, z: 84 }, { x: 124, z: 4 }, { x: 196, z: -76 },
   { x: 44, z: -156 }, { x: -116, z: -84 }, { x: -196, z: 4 }, { x: -44, z: 84 },
 ];
 const RACE_PAR = 150;
+// The Gran Vuelta: a full-city circuit from Faro point, ten gates, the big
+// money — the side activity for drivers who finished the boardwalk sprint.
+const TOUR_GATES = [
+  { x: 124, z: 164 }, { x: 44, z: 84 }, { x: -116, z: 84 }, { x: -204, z: 4 },
+  { x: -124, z: -76 }, { x: -44, z: -156 }, { x: 116, z: -156 }, { x: 204, z: -76 },
+  { x: 124, z: 4 }, { x: 216, z: 120 },
+];
+const TOUR_PAR = 235, TOUR_PRIZE = 750;
 
 export class Missions {
   constructor(scene, world, G) {
@@ -112,10 +137,14 @@ export class Missions {
       m.position.set(s.x, 0.7, s.z); scene.add(m);
       this.packages.set(s.id, { ...s, mesh: m, taken: false });
     }
-    // Ivo, the accountant (his own little mesh, shown at the lighthouse).
+    // Ivo, the accountant (shown at the lighthouse for job 4).
     this.ivo = makePersonMesh(0xf2f2ee, 0x2c3550, 0xc98d5e, 0x2c3550);
     this.ivo.position.set(LOCATIONS.lighthouse.x + 2, 0, LOCATIONS.lighthouse.z + 1);
     this.ivo.visible = false; scene.add(this.ivo);
+    // Pilar Duarte herself (waits outside her club for the last job).
+    this.pilar = makePersonMesh(0x7a2e4d, 0x22131d, 0xc98d5e, 0xffd94d);
+    this.pilar.position.set(LOCATIONS.club.x + 3, 0, LOCATIONS.club.z + 2);
+    this.pilar.visible = false; scene.add(this.pilar);
     this.rival = null; this.fare = null; this.race = null;
     this.taxiPed = null;
   }
@@ -131,7 +160,8 @@ export class Missions {
     G.hud.banner(job.title, job.sub, 4);
     this.queueDialogue(job.intro);
     if (job.title.startsWith('Pulpo')) this.spawnRival(G);
-    if (job.title.startsWith('Pasajero')) this.ivo.visible = true;
+    if (job.steps.some(s => s.npc === 'ivo')) this.ivo.visible = true;
+    if (job.steps.some(s => s.npc === 'pilar')) this.pilar.visible = true;
     if (idx === 1) { // the valet Tormenta must be stealable, wherever it ended up
       const v = G.valetCar;
       v.health = 100; v.dead = false; v.speed = 0; v.driver = 'parked';
@@ -195,8 +225,13 @@ export class Missions {
     } else if (P.car && dist2d(P.car.x, P.car.z, LOCATIONS.garage.x, LOCATIONS.garage.z) < 11) {
       return { text: 'E — TALLER SOL: full repair — $60', action: () => this.useShop(G, SHOPS[0], true) };
     }
-    if (!P.onFoot && !this.race && !this.active && dist2d(P.car.x, P.car.z, LOCATIONS.raceStart.x, LOCATIONS.raceStart.z) < 7) {
-      return { text: 'E — start the Boardwalk Run (8 gates, par ' + fmtTime(RACE_PAR) + ', prize $300)', action: () => this.startRace(G) };
+    if (!P.onFoot && !this.race && !this.active) {
+      if (dist2d(P.car.x, P.car.z, LOCATIONS.raceStart.x, LOCATIONS.raceStart.z) < 7) {
+        return { text: 'E — start the Boardwalk Run (8 gates, par ' + fmtTime(RACE_PAR) + ', prize $300)', action: () => this.startRace(G) };
+      }
+      if (dist2d(P.car.x, P.car.z, LOCATIONS.tourStart.x, LOCATIONS.tourStart.z) < 8) {
+        return { text: 'E — start the GRAN VUELTA (10 gates citywide, par ' + fmtTime(TOUR_PAR) + ', prize $750)', action: () => this.startTour(G) };
+      }
     }
     return null;
   }
@@ -214,8 +249,14 @@ export class Missions {
     G.save();
   }
   startRace(G) {
-    this.race = { gate: 0, t: 0 };
+    this.race = { name: 'Boardwalk Run', gates: RACE_GATES, par: RACE_PAR, prize: 300, gate: 0, t: 0 };
     G.hud.banner('BOARDWALK RUN', 'Hit every gate — beat ' + fmtTime(RACE_PAR) + ' for $300', 3.2);
+    G.audio.success();
+  }
+  startTour(G) {
+    this.race = { name: 'Gran Vuelta', gates: TOUR_GATES, par: TOUR_PAR, prize: TOUR_PRIZE, gate: 0, t: 0 };
+    G.hud.banner('GRAN VUELTA', 'Ten gates, the whole city — beat ' + fmtTime(TOUR_PAR) + ' for $750', 3.6);
+    G.hud.dialogue('PILAR (phone)', 'The whole city is a racetrack tonight, Nico. Show them whose streets these are.', 3.6);
     G.audio.success();
   }
   // Taxi work: hail a pedestrian while driving a taxi.
@@ -304,22 +345,25 @@ export class Missions {
       }
     }
     this.updateTaxi(G, dt);
-    // Race gates.
+    // Races: the boardwalk sprint and the Gran Vuelta share the machinery.
     if (this.race) {
       const r = this.race; r.t += dt;
-      const gate = RACE_GATES[r.gate];
+      const gate = r.gates[r.gate];
       G.objectivePos = gate;
-      G.objectiveText = 'Boardwalk Run — gate ' + (r.gate + 1) + '/8 · ' + fmtTime(r.t);
+      G.objectiveText = r.name + ' — gate ' + (r.gate + 1) + '/' + r.gates.length + ' · ' + fmtTime(r.t);
+      G.jobProgress = r.name + ' · par ' + fmtTime(r.par) + (G.raceBest ? ' · best ' + fmtTime(G.raceBest) : '');
       if (!G.player.onFoot && dist2d(G.player.car.x, G.player.car.z, gate.x, gate.z) < 10) {
         r.gate++; G.audio.pickup();
-        if (r.gate >= RACE_GATES.length) {
-          const prize = r.t <= RACE_PAR ? 300 : 50;
+        if (r.gate >= r.gates.length) {
+          const prize = r.t <= r.par ? r.prize : 50;
           G.cash += prize; G.audio.success();
-          G.hud.banner('RACE FINISHED', fmtTime(r.t) + ' — prize ' + fmtCash(prize), 3.4);
+          G.hud.banner(r.name.toUpperCase() + ' FINISHED', fmtTime(r.t) + ' — prize ' + fmtCash(prize), 3.4);
           if (!G.raceBest || r.t < G.raceBest) G.raceBest = r.t;
           this.race = null; G.save();
         }
       }
+      this.beam.visible = this.ring.visible = true;
+      this.placeMarker(gate, t);
       return;
     }
     if (this.fare) {
@@ -344,7 +388,7 @@ export class Missions {
           this.startJob(G, this.storyIndex);
       } else {
         G.objectivePos = null;
-        G.objectiveText = 'Free roam — the city is yours. Taxi fares, the Boardwalk Run and 15 packages remain.';
+        G.objectiveText = 'Free roam — the city is yours. Taxi fares, the Boardwalk Run, the Gran Vuelta and 15 packages remain.';
         G.jobProgress = 'Story complete · Packages ' + G.packagesFound.size + '/15' + (G.raceBest ? ' · Best race ' + fmtTime(G.raceBest) : '');
       }
       this.beam.visible = this.ring.visible = !!G.objectivePos;
@@ -377,16 +421,17 @@ export class Missions {
         if (!P.onFoot && P.car === G.valetCar && dist2d(P.car.x, P.car.z, step.pos.x, step.pos.z) < step.r) this.stepDone(G);
         else if (G.valetCar.dead) this.failJob(G, 'The Tormenta is wrecked. Pilar is… displeased.');
         break;
-      case 'pickup':
+      case 'pickup': {
         G.objectivePos = step.pos;
         if (!P.onFoot && dist2d(P.car.x, P.car.z, step.pos.x, step.pos.z) < step.r && Math.abs(P.car.speed) < 3) {
-          this.ivo.visible = false;
+          (step.npc === 'pilar' ? this.pilar : this.ivo).visible = false;
           G.police.reportCrime('mission', P.car.x, P.car.z, G);
-          G.police.heat = Math.max(G.police.heat, 3);
-          G.hud.dialogue('IVO', 'Drive, drive! Half the Policía are behind us!', 3.6);
+          G.police.heat = Math.max(G.police.heat, step.heat || 3);
+          G.hud.dialogue(step.who || 'IVO', step.line || 'Drive!', 3.6);
           this.stepDone(G);
         }
         break;
+      }
       case 'escape':
         G.objectivePos = null;
         G.objectiveText = step.label + ' (now: ' + G.police.stars() + '★)';

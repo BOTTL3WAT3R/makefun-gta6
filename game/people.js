@@ -1,5 +1,6 @@
 // people.js — the on-foot player character (Nico Ferrer) and Costa Vera's
-// pedestrians: sidewalk walkers who flee danger, hail taxis, and fall when hit.
+// pedestrians: sidewalk walkers who flee danger, hail taxis, stop to chat
+// in pairs, walk their dogs, and fall when hit.
 
 import * as THREE from 'three';
 import { mergeParts, partBox, AVENUES_X, STREETS_Z } from './world.js';
@@ -41,17 +42,50 @@ export function animatePerson(mesh, phase, speedRatio, aiming) {
   u.armR.rotation.x = aiming ? -1.35 : swing * 0.8;
 }
 
+// A dog: one merged mesh, trots at its owner's heel.
+function makeDogMesh(coat) {
+  const m = new THREE.Mesh(mergeParts([
+    partBox(0.34, 0.34, 0.78, 0, 0.48, 0, coat),                 // body
+    partBox(0.26, 0.26, 0.3, 0, 0.68, 0.48, coat),               // head
+    partBox(0.1, 0.1, 0.24, 0, 0.6, 0.66, 0x2c2118),             // snout
+    partBox(0.07, 0.2, 0.07, 0, 0.72, -0.44, coat, 0, -0.5),     // tail, up
+    partBox(0.09, 0.34, 0.09, -0.1, 0.17, 0.28, coat), partBox(0.09, 0.34, 0.09, 0.1, 0.17, 0.28, coat),
+    partBox(0.09, 0.34, 0.09, -0.1, 0.17, -0.28, coat), partBox(0.09, 0.34, 0.09, 0.1, 0.17, -0.28, coat),
+  ]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
+  m.castShadow = true;
+  return m;
+}
+
 export class PeopleSystem {
   constructor(scene, world) {
     this.world = world; this.peds = [];
-    for (let i = 0; i < 26; i++) {
+    for (let i = 0; i < 40; i++) {
       const mesh = makePersonMesh(pick(shirts), pick(pants), pick(skinTones), pick(shirts));
       const ped = {
         mesh, x: 0, z: 0, angle: rand(0, 6.28), speed: 0, health: 100,
         state: 'walk', fleeT: 0, downT: 0, phase: rand(0, 6), hail: false, route: null,
+        chatT: 0, partner: null, dog: null,
       };
       this.placeOnSidewalk(ped, rand(-230, 230), rand(-200, 170));
       scene.add(mesh); this.peds.push(ped);
+    }
+    // Five of them walk dogs.
+    for (let i = 0; i < 5; i++) {
+      const ped = this.peds[i * 7 + 2];
+      const dogMesh = makeDogMesh(pick([0x8a5e3a, 0xd8d2c4, 0x3a3230, 0xb0563a]));
+      scene.add(dogMesh);
+      ped.dog = { mesh: dogMesh, x: ped.x - 0.8, z: ped.z - 0.8, angle: ped.angle, phase: rand(0, 6) };
+    }
+    // Four pairs start out mid-conversation on the promenade and downtown.
+    for (let i = 0; i < 4; i++) {
+      const a = this.peds[30 + i * 2], b = this.peds[31 + i * 2];
+      if (!a || !b) break;
+      const sx = rand(-180, 180), sz = pick([171.5, -40 + 11.3, 40 - 11.3, 80 + 11.3]);
+      this.placeOnSidewalk(a, sx, sz); this.placeOnSidewalk(b, sx + 1.1, sz + 0.4);
+      b.x = a.x + 1.05; b.z = a.z + 0.35;
+      a.angle = Math.atan2(b.x - a.x, b.z - a.z); b.angle = Math.atan2(a.x - b.x, a.z - b.z);
+      a.state = b.state = 'chat'; a.chatT = b.chatT = rand(7, 15);
+      a.partner = b; b.partner = a;
     }
   }
   placeOnSidewalk(ped, x, z) {
@@ -64,10 +98,13 @@ export class PeopleSystem {
     if (best.axis === 'z') { ped.x = best.fixed + ped.route.side; ped.z = z; }
     else { ped.z = best.fixed + ped.route.side; ped.x = x; }
     ped.state = 'walk'; ped.health = 100; ped.mesh.rotation.set(0, ped.angle, 0);
+    ped.mesh.position.y = 0;
+    if (ped.dog) { ped.dog.x = ped.x - 0.8; ped.dog.z = ped.z - 0.8; ped.dog.mesh.visible = true; }
   }
   damage(ped, dmg, G) {
     if (ped.state === 'down') return;
     ped.health -= dmg;
+    if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
     if (ped.health <= 0) {
       ped.state = 'down'; ped.downT = 0;
       ped.mesh.rotation.x = -Math.PI / 2; ped.mesh.position.y = 0.18;
@@ -77,22 +114,60 @@ export class PeopleSystem {
       G.reportCrime && G.reportCrime('assault', ped.x, ped.z);
     }
   }
+  stepDog(ped, dt) {
+    const dog = ped.dog;
+    if (!dog) return;
+    if (ped.state === 'ride' || ped.state === 'gone') { dog.mesh.visible = false; return; }
+    dog.mesh.visible = true;
+    // heel: behind and to the left of the owner, trotting to keep up
+    const hx = ped.x - Math.sin(ped.angle) * 0.85 - Math.cos(ped.angle) * 0.4;
+    const hz = ped.z - Math.cos(ped.angle) * 0.85 + Math.sin(ped.angle) * 0.4;
+    const d = dist2d(dog.x, dog.z, hx, hz);
+    if (d > 0.15) {
+      const sp = clamp(d * 2.2, 0.8, 5.2);
+      dog.angle = angleLerp(dog.angle, Math.atan2(hx - dog.x, hz - dog.z), clamp(dt * 10, 0, 1));
+      dog.x += Math.sin(dog.angle) * sp * dt;
+      dog.z += Math.cos(dog.angle) * sp * dt;
+      dog.phase += dt * sp * 4.2;
+    }
+    dog.mesh.position.set(dog.x, Math.abs(Math.sin(dog.phase)) * 0.05, dog.z);
+    dog.mesh.rotation.y = dog.angle;
+  }
   step(dt, G) {
     const danger = G.danger; // {x, z, t} recent violence / fast car
     for (const ped of this.peds) {
-      if (ped.state === 'ride' || ped.state === 'gone') continue; // in a car, or removed
+      if (ped.state === 'ride' || ped.state === 'gone') { this.stepDog(ped, dt); continue; }
       if (ped.state === 'down') {
         ped.downT += dt;
+        this.stepDog(ped, dt);
         if (ped.downT > 7 && dist2d(ped.x, ped.z, G.player.x, G.player.z) > 60) {
           ped.mesh.rotation.x = 0; ped.mesh.position.y = 0;
           this.placeOnSidewalk(ped, G.player.x + rand(-160, 160), G.player.z + rand(-160, 160));
         }
         continue;
       }
+      if (ped.state === 'chat') {
+        ped.chatT -= dt;
+        ped.phase += dt * 0.7;
+        // idle talk: mostly still, an arm gesture now and then
+        const u = ped.mesh.userData;
+        u.armR.rotation.x = Math.sin(ped.phase * 1.7) > 0.72 ? -0.9 : 0.05;
+        u.armL.rotation.x = Math.sin(ped.phase * 1.3 + 2) > 0.8 ? -0.7 : -0.05;
+        syncPed(ped);
+        if (danger && performance.now() - danger.t < 2000 && dist2d(ped.x, ped.z, danger.x, danger.z) < 15) {
+          if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
+          ped.state = 'flee'; ped.fleeT = 2.6; ped.fleeFrom = { x: danger.x, z: danger.z };
+        } else if (ped.chatT <= 0) {
+          if (ped.partner) { ped.partner.partner = null; ped.partner = null; }
+          ped.state = 'walk';
+        }
+        this.stepDog(ped, dt);
+        continue;
+      }
       let moveAngle = ped.angle, speed = 0;
       if (ped.hail) { // stands at the curb, arm up
         ped.mesh.userData.armR.rotation.x = -2.6;
-        syncPed(ped); continue;
+        syncPed(ped); this.stepDog(ped, dt); continue;
       }
       if (danger && performance.now() - danger.t < 2600 && dist2d(ped.x, ped.z, danger.x, danger.z) < 17) {
         ped.state = 'flee'; ped.fleeT = 2.6;
@@ -120,6 +195,7 @@ export class PeopleSystem {
       ped.phase += dt * speed * 3.4;
       animatePerson(ped.mesh, ped.phase, clamp(speed / 2, 0, 1.4), false);
       syncPed(ped);
+      this.stepDog(ped, dt);
       // run over?
       for (const car of G.allCars) {
         if (Math.abs(car.speed) < 3.2) continue;
@@ -158,7 +234,8 @@ export function stepPlayerOnFoot(G, dt, input) {
   p.vy -= 13 * dt; p.y = Math.max(0, p.y + p.vy * dt);
   if (p.y === 0) p.vy = 0;
   p.speedNow = speed;
-  p.mesh.position.set(p.x, p.y, p.z);
+  const bob = moving && p.y === 0 ? Math.abs(Math.sin(p.phase)) * 0.045 : 0;
+  p.mesh.position.set(p.x, p.y + bob, p.z);
   p.mesh.rotation.y = p.angle;
   animatePerson(p.mesh, p.phase, moving ? sprint : 0, G.aiming);
   return moving;
