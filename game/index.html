@@ -3,101 +3,83 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Golden Hour — Costa Vera: a 3D open-world crime game in the browser. Seven jobs, five stars, one warm sea.">
+<meta name="theme-color" content="#f7a56b">
 <title>Golden Hour — Costa Vera</title>
-<link rel="icon" href="data:,">
 <link rel="stylesheet" href="./style.css">
-<script type="importmap">
-{ "imports": { "three": "./three.module.min.js" } }
-</script>
 </head>
 <body>
-<div id="app"></div>
 
-<div id="hud">
-  <div id="stats" class="panel">
-    <div id="cash">$0</div>
-    <div id="pkg-count">▣ 0/15</div>
+<div id="vignette"></div>
+
+<!-- In-game HUD -->
+<div id="hud" style="display:none">
+  <div id="top-left">
+    <div id="cash">$85</div>
+    <div id="package-count">📦 0/15</div>
+    <div id="health-wrap"><div id="health-fill"></div></div>
+    <div id="armor-wrap"><div id="armor-fill"></div></div>
   </div>
-
-  <div id="stars">☆☆☆☆☆</div>
-  <div id="busted-wrap" class="panel">
-    <div class="lbl">BUSTED</div>
-    <div id="busted-bar"><div id="busted-fill"></div></div>
+  <div id="top-right">
+    <div id="wanted-stars">☆☆☆☆☆</div>
   </div>
-
-  <div id="objective" class="panel">
-    <div id="obj-title"></div>
-    <div id="obj-text"></div>
-    <div id="obj-timer"></div>
+  <div id="objective"></div>
+  <div id="job-timer" style="display:none"></div>
+  <canvas id="minimap" width="190" height="190"></canvas>
+  <div id="card" style="display:none">
+    <div id="card-title"></div>
+    <div id="card-sub"></div>
   </div>
-  <div id="race-info" class="panel"></div>
-
-  <div id="map-wrap">
-    <canvas id="minimap" width="190" height="190"></canvas>
-    <div id="health-bar"><div id="health-fill"></div></div>
-  </div>
-
-  <div id="speedo">
-    <div><span id="speed-val">0</span> <span class="unit">km/h</span></div>
-    <div id="veh-name"></div>
-    <div id="radio-name"></div>
-  </div>
-
-  <div id="dialogue" class="panel">
+  <div id="dialogue" style="display:none">
     <div id="dlg-name"></div>
     <div id="dlg-text"></div>
     <div id="dlg-hint">E ▸</div>
   </div>
-
-  <div id="toasts"></div>
-  <div id="prompt" class="panel"></div>
-  <div id="crosshair"></div>
-  <div id="hitmarker">✕</div>
+  <div id="bust-wrap" style="display:none"><span>BUSTED</span><div id="bust-track"><div id="bust-fill"></div></div></div>
+  <div id="prompt" style="display:none"></div>
+  <div id="toast" style="display:none"></div>
+  <div id="radio-name" style="display:none"></div>
 </div>
-<div id="hurt-flash"></div>
 
-<div id="title-screen" class="screen">
-  <h1>GOLDEN HOUR</h1>
-  <div class="sub">COSTA VERA</div>
-  <div class="tag">One city. One fixer. Seven jobs. The tide goes out tonight.</div>
-  <button id="btn-new" class="btn">NEW GAME</button>
-  <button id="btn-continue" class="btn">CONTINUE</button>
-  <div id="title-note"></div>
-  <div class="controls">
-    WASD move / drive · Mouse look · <b>E</b> interact · <b>F</b> enter &amp; exit car<br>
-    Click shoot · Shift sprint · Space handbrake · <b>Q</b> radio · <b>T</b> taxi duty · Esc pause
+<!-- Big centre banner: BUSTED / WASTED / story completion -->
+<div id="banner" style="display:none">
+  <div id="banner-title"></div>
+  <div id="banner-sub"></div>
+</div>
+
+<!-- Title screen -->
+<div id="title-screen">
+  <div id="title-inner">
+    <div id="title-kicker">COSTA VERA · POP. 40,000 · EST. GOLDEN HOUR</div>
+    <h1 id="title-name">GOLDEN HOUR</h1>
+    <div id="title-tag">A small city, a warm sea, and seven jobs for a fixer named Pilar.</div>
+    <div id="title-buttons">
+      <button id="btn-new" type="button">▶ &nbsp;New Game</button>
+      <button id="btn-continue" type="button">↻ &nbsp;Continue</button>
+    </div>
+    <div id="title-controls">
+      <span><b>WASD</b> move / drive</span>
+      <span><b>E</b> talk · enter car · use</span>
+      <span><b>Mouse</b> aim · <b>Click</b> fire pistol</span>
+      <span><b>Shift</b> sprint</span>
+      <span><b>R</b> radio (in a car)</span>
+      <span><b>Esc</b> pause &amp; save</span>
+    </div>
+    <div id="title-note">An open-world crime game in your browser. Steal cars, run jobs, mind the stars.</div>
   </div>
 </div>
 
-<div id="pause-menu" class="screen">
-  <h2>PAUSED</h2>
-  <button id="btn-resume" class="btn">RESUME</button>
-  <button id="btn-save" class="btn">SAVE GAME</button>
-  <button id="btn-restart" class="btn">RESTART STORY</button>
-  <button id="btn-quit" class="btn">TITLE SCREEN</button>
-  <div id="save-note"></div>
+<!-- Pause menu -->
+<div id="pause-menu" style="display:none">
+  <div id="pause-inner">
+    <h2>Paused</h2>
+    <button id="btn-resume" type="button">Resume</button>
+    <button id="btn-save" type="button">Save game</button>
+    <button id="btn-quit" type="button">Quit to title</button>
+    <div id="pause-note">Saving keeps your cash, story progress, packages and position.</div>
+  </div>
 </div>
 
-<div id="wasted-screen" class="screen">
-  <div class="big">WASTED</div>
-  <div class="small">The Clínica del Sol patches you up. It is not free.</div>
-</div>
-
-<div id="busted-screen" class="screen">
-  <div class="big">BUSTED</div>
-  <div class="small">The Comisaría keeps your cash for the paperwork.</div>
-</div>
-
-<div id="ending-screen" class="screen">
-  <h2>THE TIDE GOES OUT</h2>
-  <p>The boat clears the pier lights and Costa Vera shrinks to a string of gold
-     behind you. Pilar's empire sails with it. What remains — the avenues, the
-     club, the long sunset — is yours now.</p>
-  <p><b>Story complete.</b> The city stays open: races, fares, packages and
-     Pilar's small tides are still out there.</p>
-  <button id="btn-roam" class="btn">FREE ROAM</button>
-</div>
-
-<script type="module" src="./main.js"></script>
+<script type="module" src="./src/main.js"></script>
 </body>
 </html>

@@ -1,4 +1,18 @@
-out/
+# Dependencies and build output
 node_modules/
+out/
+output/
+dist/
+
+# Local tooling scratch
 *.log
+*.tmp
+.env
 .DS_Store
+.playwright/
+test-results/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
