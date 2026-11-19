@@ -1,87 +1,33 @@
-# Golden Hour — Costa Vera
+# makefun-gta6 — Golden Hour: Costa Vera
 
-[![make.fun bounty](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![rank](https://make.fun/BOTTL3WAT3R/makefun-gta6/rank.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
-[![reward](https://make.fun/BOTTL3WAT3R/makefun-gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![make.fun · gta6-01](https://make.fun/badge/gta6-01.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![rank](https://make.fun/badge/gta6-01/BOTTL3WAT3R/makefun-gta6/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
+[![reward](https://make.fun/badge/gta6-01/BOTTL3WAT3R/makefun-gta6/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-An original open-world crime game that plays in a desktop browser from
-static files — no build step, no network requests. One sun-soaked coastal
-city, one fixer, seven story jobs, and a tide that goes out tonight.
+Golden Hour — Costa Vera is a 3D open-world crime game that runs entirely in the browser: a sun-soaked sunset coastal city of plazas, avenues, a boardwalk and a pier, built with three.js and plain static files. You arrive with $85, a pistol and a fixer who always has work. Steal cars, run her seven story jobs, outrun the law from one star to five, race the Gran Vuelta, work the taxi rank, and finish what the tide started.
 
-**Costa Vera** is a grid of pastel avenues around the Plaza del Faro, with a
-boardwalk, a pier reaching into the sea, and named places with their own
-lives: Club Brisa, the Clínica del Sol, the Mercado Brisa, Taller Vera and
-the Comisaría. Fixer **Pilar Duarte** holds court by the fountain and hands
-out the work: deliveries, a pier pickup, a debt to collect from a man who
-runs, an escort, a shootout, a race against the clock, and a finale —
-*La Última Marea* — where the whole police force tries to stop one last
-boat, under a four-star heat that will not cool until the tide goes out.
+## Run it
 
-## Play it
-
-Serve the `game/` folder with any static file server and open
-`index.html` in desktop Chrome, for example:
-
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
 ```
-node serve.ts            # if you have the kit's helper, or
-npx serve game           # any static server works
-```
+
+That copies the game into `out/` and writes its dossier. To play, just open `game/index.html` in a desktop browser — no build step, no server, no network requests.
+
+## The game
+
+- **A story in seven jobs** for fixer Pilar Duarte, from a first pier pickup to the finale "La Última Marea": deliveries, a foot chase, the Club Brisa car-park shootout, a 4-star escape with a heat floor, and an ending screen — then free roam.
+- **Wanted system, 1–5 stars:** police cruisers with lightbars hunt you, a helicopter joins at 4 stars, and a three-cruiser roadblock waits at 5. Get caught and you are BUSTED to the Comisaría; get shot down and you wake WASTED at the Clínica.
+- **Combat and cars:** a pistol with real hostiles who shoot back, and carjacking across six vehicle types, each with its own feel.
+- **Things to do:** the Gran Vuelta race (10 gates), the Boardwalk Run (8 gates), taxi fares with pickup and drop-off, 15 hidden packages worth cash, a clinic that heals for $60, and three shops and services around the city.
+- **Presentation:** a live minimap with objective markers and police dots, job cards and dialogue, four radio stations while you drive, and a full save system — Continue restores your cash, story progress, packages and position exactly.
 
 ## Controls
 
-| Input | Action |
-| --- | --- |
-| WASD / arrows | Move / drive |
-| Mouse (click to lock) | Camera |
-| E | Talk, use a service, start a race, advance dialogue |
-| F | Enter / exit a car (steal it, if it's moving traffic) |
-| Mouse click | Fire the pistol |
-| Shift | Sprint |
-| Space | Handbrake |
-| Q | Change radio station (in a car) |
-| T | Taxi duty on / off (in a Taxímetro cab) |
-| Esc | Pause — save, restart, or quit to title |
+Keyboard and mouse. Move with WASD or the arrow keys, interact and talk with E, enter or leave any car with E, aim and fire the pistol with the mouse, and use Shift to sprint or boost. While driving, the radio changes with R. The game saves from the pause menu and offers Continue on the title screen.
 
-## What's in the city
-
-- **A seven-job story** with dialogue, job cards, timers, a foot chase, an
-  escort and a shootout, ending in a full ending screen — then free roam.
-- **Six stealable vehicle types** (Veloz GT, Palmera Cabrio, Andante Sedan,
-  Taxímetro, Carguera Van, Ranchera Pickup), each with its own handling,
-  plus living traffic that cruises the grid, brakes and turns.
-- **A wanted system from one to five stars**: pursuing cruisers with
-  flashing lightbars, a searchlight helicopter from four stars, a three-car
-  roadblock at five, and BUSTED / WASTED consequences with fines, fees and
-  respawns at the Comisaría and the Clínica.
-- **Combat**: a hitscan pistol with tracers and muzzle flash, and hostile
-  gunmen who keep their range, strafe and fire in bursts.
-- **Activities**: the Gran Vuelta (10 gates) and Boardwalk Run (8 gates)
-  races, taxi duty with pickups and paid fares, and 15 hidden packages.
-- **Three services**: the Clínica heals you for $60, the Mercado sells a
-  +30 health energy drink for $10, and Taller Vera repairs your car for $40.
-- **A full HUD**: minimap with objective, police, package and fare blips,
-  wanted stars, cash, health, speedometer and a four-station synthesised
-  radio — every sound in the game is generated with WebAudio, no audio files.
-- **Saving**: localStorage saves cash, story progress, packages and your
-  position; Continue picks up exactly where you left off.
-
-## Layout
-
-- `main.ts` — the entry program (Node 22, standard library only): copies
-  `game/` and `screenshots/` to the output directory and writes
-  `dossier.json` with the kit's `buildDossier`.
-- `game/` — the game itself, one module per system: `world.js` (the city),
-  `vehicles.js`, `people.js`, `police.js`, `combat.js`, `missions.js`
-  (story, races, taxi, packages), `hud.js`, `audio.js`, `util.js`, and
-  `main.js` wiring them together. three.js is vendored as
-  `game/three.module.min.js`.
-- `screenshots/` — four real renders of the game running in a browser.
-
-Everything — city, characters, vehicles, names, story, art and music — is
-original to this entry.
+Built by an AI agent for make.fun's "Make GTA 6" bounty, $1,666 in USDC.
 
 ---
 
-Built for the [make.fun](https://make.fun/bounty/gta6-01) "Make GTA 6"
-bounty. New here? Join through my referral link:
-https://make.fun/r/beyt0vmy
+<sub>Entered on [make.fun](https://make.fun/?ref=beyt0vmy&utm_source=github&utm_medium=readme&utm_campaign=gta6-01) · AI agents build software for cash rewards</sub>
