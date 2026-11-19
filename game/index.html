@@ -5,101 +5,99 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Golden Hour — Costa Vera</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="./style.css">
 <script type="importmap">
 { "imports": { "three": "./three.module.min.js" } }
 </script>
 </head>
 <body>
-<div id="game"></div>
+<div id="app"></div>
 
-<!-- Damage vignette and screen fade -->
-<div id="vignette"></div>
-<div id="fade"></div>
+<div id="hud">
+  <div id="stats" class="panel">
+    <div id="cash">$0</div>
+    <div id="pkg-count">▣ 0/15</div>
+  </div>
 
-<!-- Crosshair, shown while on foot -->
-<div id="crosshair"><span></span></div>
+  <div id="stars">☆☆☆☆☆</div>
+  <div id="busted-wrap" class="panel">
+    <div class="lbl">BUSTED</div>
+    <div id="busted-bar"><div id="busted-fill"></div></div>
+  </div>
 
-<!-- Objective tracker, top left -->
-<div id="objbox" class="hidden">
-  <div id="obj-kicker">OBJECTIVE</div>
-  <div id="obj-text">Find Pilar Duarte at the fountain plaza.</div>
-  <div id="obj-dist"></div>
+  <div id="objective" class="panel">
+    <div id="obj-title"></div>
+    <div id="obj-text"></div>
+    <div id="obj-timer"></div>
+  </div>
+  <div id="race-info" class="panel"></div>
+
+  <div id="map-wrap">
+    <canvas id="minimap" width="190" height="190"></canvas>
+    <div id="health-bar"><div id="health-fill"></div></div>
+  </div>
+
+  <div id="speedo">
+    <div><span id="speed-val">0</span> <span class="unit">km/h</span></div>
+    <div id="veh-name"></div>
+    <div id="radio-name"></div>
+  </div>
+
+  <div id="dialogue" class="panel">
+    <div id="dlg-name"></div>
+    <div id="dlg-text"></div>
+    <div id="dlg-hint">E ▸</div>
+  </div>
+
+  <div id="toasts"></div>
+  <div id="prompt" class="panel"></div>
+  <div id="crosshair"></div>
+  <div id="hitmarker">✕</div>
 </div>
+<div id="hurt-flash"></div>
 
-<!-- Status cluster, top right -->
-<div id="status" class="hidden">
-  <div id="stars"></div>
-  <div id="cash">$0</div>
-  <div id="healthwrap"><div id="healthfill"></div></div>
-  <div id="bustedwrap"><div id="bustedfill"></div></div>
-  <div id="speedo"></div>
-</div>
-
-<!-- Radio readout, bottom right -->
-<div id="radio" class="hidden"></div>
-
-<!-- Minimap, bottom left -->
-<div id="mapwrap" class="hidden">
-  <canvas id="minimap" width="196" height="196"></canvas>
-  <div id="maplabel">COSTA VERA</div>
-</div>
-
-<!-- Race progress, top centre -->
-<div id="racebox" class="hidden">
-  <div id="race-title">BOARDWALK RUN</div>
-  <div id="race-info">Gate 1/8</div>
-</div>
-
-<!-- Dialogue banner, bottom centre -->
-<div id="dialogue" class="hidden">
-  <div id="dlg-name">PILAR DUARTE</div>
-  <div id="dlg-text"></div>
-</div>
-
-<!-- Interaction prompt -->
-<div id="prompt" class="hidden"></div>
-
-<!-- Dispatch and event toasts -->
-<div id="toasts"></div>
-
-<!-- Story job card -->
-<div id="jobcard" class="hidden">
-  <div id="card-kicker">STORY JOB</div>
-  <div id="card-title">First Run</div>
-  <div id="card-sub"></div>
-</div>
-
-<!-- Title menu -->
-<div id="menu">
-  <div class="menu-inner">
-    <div class="menu-kicker">A COSTA VERA STORY</div>
-    <h1>GOLDEN<br>HOUR</h1>
-    <p class="tagline">The sun is going down on Costa Vera, and fixer Pilar Duarte
-    has one week of work for a driver who does not ask questions. That driver is you.</p>
-    <button id="btn-new" class="menubtn">NEW GAME</button>
-    <button id="btn-continue" class="menubtn ghost">CONTINUE</button>
-    <div class="controls">
-      <div><b>W A S D</b> move / drive</div>
-      <div><b>Mouse</b> look &nbsp;·&nbsp; <b>Click</b> shoot</div>
-      <div><b>F</b> enter / exit car</div>
-      <div><b>E</b> talk / use / buy</div>
-      <div><b>Shift</b> sprint &nbsp;·&nbsp; <b>Space</b> handbrake</div>
-      <div><b>R</b> radio &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>Esc</b> pause</div>
-    </div>
-    <div class="menu-foot">An original open-world crime game. Every car, corner and crime in Costa Vera is fictional.</div>
+<div id="title-screen" class="screen">
+  <h1>GOLDEN HOUR</h1>
+  <div class="sub">COSTA VERA</div>
+  <div class="tag">One city. One fixer. Seven jobs. The tide goes out tonight.</div>
+  <button id="btn-new" class="btn">NEW GAME</button>
+  <button id="btn-continue" class="btn">CONTINUE</button>
+  <div id="title-note"></div>
+  <div class="controls">
+    WASD move / drive · Mouse look · <b>E</b> interact · <b>F</b> enter &amp; exit car<br>
+    Click shoot · Shift sprint · Space handbrake · <b>Q</b> radio · <b>T</b> taxi duty · Esc pause
   </div>
 </div>
 
-<!-- Busted / wasted / ending screen -->
-<div id="end" class="hidden">
-  <div class="menu-inner">
-    <h1 id="end-title">BUSTED</h1>
-    <p class="tagline" id="end-sub"></p>
-    <button id="btn-again" class="menubtn">BACK TO THE STREET</button>
-  </div>
+<div id="pause-menu" class="screen">
+  <h2>PAUSED</h2>
+  <button id="btn-resume" class="btn">RESUME</button>
+  <button id="btn-save" class="btn">SAVE GAME</button>
+  <button id="btn-restart" class="btn">RESTART STORY</button>
+  <button id="btn-quit" class="btn">TITLE SCREEN</button>
+  <div id="save-note"></div>
 </div>
 
-<script type="module" src="main.js"></script>
+<div id="wasted-screen" class="screen">
+  <div class="big">WASTED</div>
+  <div class="small">The Clínica del Sol patches you up. It is not free.</div>
+</div>
+
+<div id="busted-screen" class="screen">
+  <div class="big">BUSTED</div>
+  <div class="small">The Comisaría keeps your cash for the paperwork.</div>
+</div>
+
+<div id="ending-screen" class="screen">
+  <h2>THE TIDE GOES OUT</h2>
+  <p>The boat clears the pier lights and Costa Vera shrinks to a string of gold
+     behind you. Pilar's empire sails with it. What remains — the avenues, the
+     club, the long sunset — is yours now.</p>
+  <p><b>Story complete.</b> The city stays open: races, fares, packages and
+     Pilar's small tides are still out there.</p>
+  <button id="btn-roam" class="btn">FREE ROAM</button>
+</div>
+
+<script type="module" src="./main.js"></script>
 </body>
 </html>

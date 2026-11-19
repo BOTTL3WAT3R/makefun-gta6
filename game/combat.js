@@ -1,170 +1,220 @@
-// combat.js — gunfire in Costa Vera: a shared effects kit (muzzle flash,
-// tracers, impact sparks) plus the player's hitscan pistol, with damage
-// falloff and witnesses who report crimes to the wanted system.
+// combat.js — gunplay in Costa Vera: the player's pistol (hitscan with a
+// visible tracer and muzzle flash) and the hostile gunmen who hold the Club
+// Brisa car park and other bad places — they keep their range, strafe, and
+// fire in bursts that can genuinely hurt.
 
-import { clamp } from './util.js';
+import * as THREE from 'three';
+import { clamp, dist2d, lineBlocked, makeRng } from './util.js';
+import { makePersonMesh, animateWalk } from './people.js';
 
-// Short-lived visual effects, pooled so a firefight never allocates.
-export function createEffects(THREE, scene) {
-  const flashLight = new THREE.PointLight(0xffc46b, 0, 18);
-  scene.add(flashLight);
-  const flashSprite = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.7),
-    new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0, depthWrite: false }));
-  scene.add(flashSprite);
-  let flashT = 0, flashPos = null;
+const rng = makeRng(31337);
 
-  const sparkPool = [];
-  for (let i = 0; i < 10; i++) {
-    const n = 26, geo = new THREE.BufferGeometry();
-    const pos = new Float32Array(n * 3);
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffc46b, size: 0.16, transparent: true }));
-    pts.visible = false; scene.add(pts);
-    sparkPool.push({ pts, pos, vel: new Float32Array(n * 3), life: 0, n });
+export class Hostile {
+  constructor(scene, x, z, opts = {}) {
+    this.mesh = makePersonMesh({ shirt: 0x23232e, pants: 0x1a1a20, cap: 0x111116 });
+    this.mesh.position.set(x, 0, z);
+    scene.add(this.mesh);
+    // A blocky pistol in the right hand.
+    const gun = new THREE.Mesh(
+      new THREE.BoxGeometry(0.09, 0.14, 0.42),
+      new THREE.MeshLambertMaterial({ color: 0x0c0c0e })
+    );
+    gun.position.set(0.34, 1.12, 0.3);
+    this.mesh.add(gun);
+    this.x = x;
+    this.z = z;
+    this.heading = rng() * Math.PI * 2;
+    this.health = opts.health || 100;
+    this.dead = false;
+    this.deadFor = 0;
+    this.burstLeft = 0;
+    this.cooldown = 1 + rng() * 1.5;
+    this.strafeDir = rng() < 0.5 ? 1 : -1;
+    this.strafeFlip = 2 + rng() * 2;
+    this.phase = rng() * 6;
+    this.homeX = x;
+    this.homeZ = z;
   }
-  let sparkIdx = 0;
-  const tracers = [];
-  for (let i = 0; i < 8; i++) {
-    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0 }));
-    line.visible = false; scene.add(line);
-    tracers.push({ line, life: 0 });
-  }
-  let tracerIdx = 0;
 
-  function muzzle(pos) {
-    flashPos = pos; flashT = 0.05;
-    flashLight.position.copy(pos); flashLight.intensity = 2.4;
-    flashSprite.position.copy(pos);
-    flashSprite.material.opacity = 0.9;
+  get pos() {
+    return this.mesh.position;
   }
-  function sparks(pos, color) {
-    const s = sparkPool[sparkIdx++ % sparkPool.length];
-    s.pts.material.color.setHex(color || 0xffc46b);
-    for (let i = 0; i < s.n; i++) {
-      s.pos[i * 3] = pos.x; s.pos[i * 3 + 1] = pos.y; s.pos[i * 3 + 2] = pos.z;
-      s.vel[i * 3] = (Math.random() - 0.5) * 5;
-      s.vel[i * 3 + 1] = Math.random() * 4.4;
-      s.vel[i * 3 + 2] = (Math.random() - 0.5) * 5;
-    }
-    s.life = 0.42; s.pts.visible = true;
-    s.pts.geometry.attributes.position.needsUpdate = true;
-  }
-  function tracer(from, to) {
-    const t = tracers[tracerIdx++ % tracers.length];
-    const p = t.line.geometry.attributes.position.array;
-    p[0] = from.x; p[1] = from.y; p[2] = from.z; p[3] = to.x; p[4] = to.y; p[5] = to.z;
-    t.line.geometry.attributes.position.needsUpdate = true;
-    t.life = 0.06; t.line.visible = true; t.line.material.opacity = 0.85;
-  }
-  function update(dt, camera) {
-    if (flashT > 0) {
-      flashT -= dt;
-      if (flashT <= 0) { flashLight.intensity = 0; flashSprite.material.opacity = 0; }
-      if (camera) flashSprite.lookAt(camera.position);
-    }
-    for (const s of sparkPool) {
-      if (!s.pts.visible) continue;
-      s.life -= dt;
-      if (s.life <= 0) { s.pts.visible = false; continue; }
-      for (let i = 0; i < s.n; i++) {
-        s.vel[i * 3 + 1] -= 12 * dt;
-        s.pos[i * 3] += s.vel[i * 3] * dt;
-        s.pos[i * 3 + 1] += s.vel[i * 3 + 1] * dt;
-        s.pos[i * 3 + 2] += s.vel[i * 3 + 2] * dt;
-        if (s.pos[i * 3 + 1] < 0.05) s.pos[i * 3 + 1] = 0.05;
-      }
-      s.pts.geometry.attributes.position.needsUpdate = true;
-    }
-    for (const t of tracers) {
-      if (!t.line.visible) continue;
-      t.life -= dt;
-      if (t.life <= 0) t.line.visible = false;
-    }
-  }
-  return { muzzle, sparks, tracer, update };
 }
 
-// How far a ray travels before a building stops it: slab test per box.
-function rayVsBoxes(origin, dir, boxes, maxDist) {
-  let best = maxDist;
-  for (const b of boxes) {
-    let tmin = 0, tmax = best;
-    const axes = [
-      [origin.x, dir.x, b.minX, b.maxX],
-      [origin.z, dir.z, b.minZ, b.maxZ],
-    ];
-    let ok = true;
-    for (const [o, d, lo, hi] of axes) {
-      if (Math.abs(d) < 1e-8) { if (o < lo || o > hi) { ok = false; break; } }
-      else {
-        let t1 = (lo - o) / d, t2 = (hi - o) / d;
-        if (t1 > t2) { const tmp = t1; t1 = t2; t2 = tmp; }
-        tmin = Math.max(tmin, t1); tmax = Math.min(tmax, t2);
-        if (tmin > tmax) { ok = false; break; }
-      }
-    }
-    if (ok && tmin < best && tmin > 0) best = tmin;
+export class CombatSystem {
+  constructor(scene, audio) {
+    this.scene = scene;
+    this.audio = audio;
+    this.hostiles = [];
+    this.tracers = [];
+    this.fireCooldown = 0;
+    this.flash = new THREE.PointLight(0xffc46b, 0, 18, 1.6);
+    scene.add(this.flash);
+    this.flashPos = new THREE.Vector3();
+    this.onShotFired = null; // (x, z) => void, wired by main for crowd panic
   }
-  return best;
-}
 
-// The player's pistol. Targets register a hit proxy: {root, kind, ref, hp}.
-export function createCombat(THREE, effects) {
-  const raycaster = new THREE.Raycaster();
-  let cooldown = 0;
-  const targets = [];
-  function registerTarget(rootMesh, kind, ref) {
-    rootMesh.traverse(o => { if (o.isMesh) { o.userData.hitRef = { kind, ref }; targets.push(o); } });
+  spawnHostile(x, z, opts) {
+    const h = new Hostile(this.scene, x, z, opts);
+    this.hostiles.push(h);
+    return h;
   }
-  function shoot(G, origin, dir, shooterPos) {
-    if (cooldown > 0) return false;
-    cooldown = 0.17;
-    G.audio.gunshot();
-    const muzzlePos = shooterPos.clone(); muzzlePos.y += 1.32;
-    effects.muzzle(muzzlePos);
-    const maxDist = rayVsBoxes(origin, dir, G.world.colliders.boxes, 120);
-    raycaster.set(origin, dir); raycaster.far = maxDist;
-    const hits = raycaster.intersectObjects(targets, false);
-    let endDist = maxDist;
-    if (hits.length) {
-      const hit = hits[0];
-      endDist = hit.distance;
-      const info = hit.object.userData.hitRef;
-      const falloff = clamp(1.18 - hit.distance / 52, 0.3, 1);
-      const dmg = 36 * falloff;
-      effects.sparks(hit.point, info && info.kind === 'car' ? 0xffc46b : 0xff8a7a);
-      if (info) applyHit(G, info, dmg, shooterPos);
-    } else if (maxDist < 120) {
-      const p = origin.clone().add(dir.clone().multiplyScalar(maxDist));
-      effects.sparks(p, 0xffe9a8);
+
+  clearHostiles() {
+    for (const h of this.hostiles) this.scene.remove(h.mesh);
+    this.hostiles = [];
+  }
+
+  aliveCount() {
+    let n = 0;
+    for (const h of this.hostiles) if (!h.dead) n++;
+    return n;
+  }
+
+  addTracer(x1, y1, z1, x2, y2, z2, color) {
+    const geo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(x1, y1, z1),
+      new THREE.Vector3(x2, y2, z2),
+    ]);
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+    this.scene.add(line);
+    this.tracers.push({ line, ttl: 0.07 });
+  }
+
+  // The player fires. from: Vector3 at the muzzle, dir: normalised Vector3.
+  // Returns 'hit' | 'kill' | 'miss' | 'cooldown'.
+  playerFire(from, dir) {
+    if (this.fireCooldown > 0) return 'cooldown';
+    this.fireCooldown = 0.21;
+    this.audio.shot();
+    if (this.onShotFired) this.onShotFired(from.x, from.z);
+    this.flash.position.copy(from);
+    this.flash.intensity = 3.2;
+    // The hit test runs on the ground plane: the camera ray of a
+    // third-person view dives past the player, so a chest-height test in
+    // full 3D would shoot over everyone's head. Horizontal aim decides.
+    const dl = Math.hypot(dir.x, dir.z) || 1;
+    const dx = dir.x / dl;
+    const dz = dir.z / dl;
+    let best = null;
+    let bestT = 60;
+    for (const h of this.hostiles) {
+      if (h.dead) continue;
+      const rx = h.x - from.x;
+      const rz = h.z - from.z;
+      const t = rx * dx + rz * dz;
+      if (t < 1 || t > bestT) continue;
+      const miss = Math.abs(rx * dz - rz * dx);
+      if (miss < 0.62) {
+        best = h;
+        bestT = t;
+      }
     }
-    const end = origin.clone().add(dir.clone().multiplyScalar(endDist));
-    effects.tracer(muzzlePos, end);
-    // Gunfire is a crime when anyone is around to hear it.
-    G.police.addHeat(G.anyoneNear(shooterPos, 46) ? 26 : 10, 'shots fired');
-    G.crowd.scareNear(shooterPos, 17);
-    return true;
+    const endT = best ? bestT : 60;
+    const endY = best ? 1.25 : from.y + dir.y * endT;
+    this.addTracer(from.x, from.y, from.z, from.x + dx * endT, endY, from.z + dz * endT, 0xffe9a8);
+    if (best) {
+      best.health -= 40;
+      if (best.health <= 0) {
+        best.dead = true;
+        return 'kill';
+      }
+      return 'hit';
+    }
+    return 'miss';
   }
-  function applyHit(G, info, dmg, shooterPos) {
-    if (info.kind === 'ped') {
-      G.crowd.hurtPed(info.ref, dmg, shooterPos);
-      G.police.addHeat(30, 'pedestrian hit');
-    } else if (info.kind === 'officer') {
-      G.police.hurtOfficer(info.ref, dmg, shooterPos);
-      G.police.addHeat(85, 'officer down');
-    } else if (info.kind === 'hostile') {
-      if (G.onHostileHit) G.onHostileHit(info.ref, dmg, shooterPos);
-    } else if (info.kind === 'car') {
-      const car = info.ref;
-      car.hp = (car.hp === undefined ? 100 : car.hp) - dmg;
-      if (car.hp <= 0 && !car.dead) {
-        car.dead = true; car.speed = 0;
-        if (car.mode === 'traffic') car.mode = 'parked';
-        G.police.addHeat(20, 'vehicle destroyed');
+
+  hostileFire(h, player) {
+    const from = { x: h.x, y: 1.3, z: h.z };
+    const jitter = () => (rng() - 0.5) * 1.6;
+    const to = { x: player.x + jitter(), y: 1.2, z: player.z + jitter() };
+    this.addTracer(from.x, from.y, from.z, to.x, to.y, to.z, 0xff9a7a);
+    this.audio.shot();
+    if (this.onShotFired) this.onShotFired(h.x, h.z);
+  }
+
+  // onPlayerHit(dmg) applies damage to the player.
+  update(dt, player, colliders, onPlayerHit) {
+    this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.flash.intensity = Math.max(0, this.flash.intensity - dt * 30);
+    for (let i = this.tracers.length - 1; i >= 0; i--) {
+      const t = this.tracers[i];
+      t.ttl -= dt;
+      t.line.material.opacity = Math.max(0, t.ttl / 0.07) * 0.9;
+      if (t.ttl <= 0) {
+        this.scene.remove(t.line);
+        t.line.geometry.dispose();
+        this.tracers.splice(i, 1);
+      }
+    }
+    for (const h of this.hostiles) {
+      if (h.dead) {
+        h.deadFor += dt;
+        h.mesh.rotation.x = Math.max(-Math.PI / 2, h.mesh.rotation.x - dt * 5);
+        h.mesh.position.y = h.deadFor > 2.5 ? Math.max(-1.2, h.mesh.position.y - dt * 0.4) : 0;
+        continue;
+      }
+      const d = dist2d(h.x, h.z, player.x, player.z);
+      const seen = d < 46 && !lineBlocked(h.x, h.z, player.x, player.z, colliders);
+      // Face the player when engaged, else drift back toward the post.
+      const tx = seen ? player.x : h.homeX;
+      const tz = seen ? player.z : h.homeZ;
+      const targetHeading = Math.atan2(tx - h.x, tz - h.z);
+      let dh = targetHeading - h.heading;
+      while (dh > Math.PI) dh -= Math.PI * 2;
+      while (dh < -Math.PI) dh += Math.PI * 2;
+      h.heading += clamp(dh, -4 * dt, 4 * dt);
+
+      let moving = 0;
+      if (seen && d > 17) moving = 1;
+      else if (seen && d < 8) moving = -1;
+      if (moving !== 0) {
+        h.x += Math.sin(h.heading) * moving * 2.3 * dt;
+        h.z += Math.cos(h.heading) * moving * 2.3 * dt;
+        h.phase += dt * 7;
+        animateWalk(h.mesh, h.phase, 0.8);
+      } else if (seen) {
+        // Strafe sideways between bursts.
+        h.strafeFlip -= dt;
+        if (h.strafeFlip <= 0) {
+          h.strafeDir *= -1;
+          h.strafeFlip = 1.6 + rng() * 2;
+        }
+        const sx = Math.cos(h.heading) * h.strafeDir;
+        const sz = -Math.sin(h.heading) * h.strafeDir;
+        h.x += sx * 0.9 * dt;
+        h.z += sz * 0.9 * dt;
+        h.phase += dt * 4;
+        animateWalk(h.mesh, h.phase, 0.4);
+      }
+      h.mesh.position.set(h.x, 0, h.z);
+      h.mesh.rotation.y = h.heading;
+
+      if (!seen) continue;
+      h.cooldown -= dt;
+      if (h.burstLeft > 0) {
+        h.burstTimer -= dt;
+        if (h.burstTimer <= 0) {
+          h.burstTimer = 0.13;
+          h.burstLeft--;
+          this.hostileFire(h, player);
+          const cover = player.vehicle ? 0.55 : 1;
+          const speedDodge = clamp(1 - player.speed / 30, 0.45, 1);
+          const chance = clamp(0.62 - d * 0.016, 0.12, 0.55) * cover * speedDodge;
+          if (rng() < chance) onPlayerHit(6 + rng() * 5);
+        }
+      } else if (h.cooldown <= 0) {
+        h.burstLeft = 3;
+        h.burstTimer = 0;
+        h.cooldown = 1.1 + rng() * 1.3;
+      }
+    }
+    // Remove long-dead bodies.
+    for (let i = this.hostiles.length - 1; i >= 0; i--) {
+      if (this.hostiles[i].dead && this.hostiles[i].deadFor > 4) {
+        this.scene.remove(this.hostiles[i].mesh);
+        this.hostiles.splice(i, 1);
       }
     }
   }
-  function update(dt) { if (cooldown > 0) cooldown -= dt; }
-  return { shoot, update, registerTarget, targets };
 }
