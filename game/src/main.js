@@ -703,18 +703,60 @@ window.GH = {
       talkToPilar(G);
       let guard = 30;
       while (G.job.dialogue && guard-- > 0) advanceDialogue(G);
-      teleportPlayer(168, -263);
-      G.camOverride = { x: 155, y: 3.4, z: -245, lx: 176, ly: 1.3, lz: -278 };
+      // Shootout from a slightly elevated three-quarter angle — the
+      // classic GTA view: the whole car park reads as a battlefield, the
+      // player left of centre, the Vendaval GT as cover to his right, the
+      // Sombra hostiles closing in with their health bars, the CLUB
+      // BRISA sign and the towers behind. The beacon column sits at
+      // ~29% width, clear of the centred title. (The player must stay
+      // within 11 m of the car park or the hostiles never spawn —
+      // (175,-264) is 10.6 m out.)
+      const coverCar = makeVehicle('sports', 0xd94f30, 178, -254, Math.PI / 2, 'parked');
+      G.scene.add(coverCar.group);
+      G.vehicles.push(coverCar);
+      const depthCar = makeVehicle('sedan', 0x2e6fb7, 188, -262, -Math.PI / 2, 'parked');
+      G.scene.add(depthCar.group);
+      G.vehicles.push(depthCar);
+      teleportPlayer(175, -264);
+      G.player.heading = Math.PI;
+      G.player.group.rotation.y = G.player.heading;
+      G.cameraYaw = G.player.heading;
+      G.camOverride = { x: 172, y: 6, z: -240, lx: 180, ly: 1, lz: -276 };
     } else if (name === 'story') {
       G.job.nextIndex = 0;
       // Leave Pilar's real opening line open over the live first job.
       talkToPilar(G);
-      teleportPlayer(296, 34);
+      // The player stands on the boardwalk at the pier root, back to the
+      // camera, looking out along the pier to the sea and the low sun;
+      // the deck and its lamps lead the eye east, beach umbrellas to the
+      // right. (The player cannot stand on the pier itself: the deck is
+      // raised 1.7 m and the player mesh sits at ground level, so he
+      // would be buried in the deck.) Two residents stroll nearby.
+      const strollers = [[335, 95], [350, 70]];
+      let placed = 0;
+      for (const p of G.peds) {
+        if (placed >= strollers.length) break;
+        if (p.mode !== 'wander') continue;
+        const [px, pz] = strollers[placed++];
+        p.x = px; p.z = pz;
+        p.targetX = px; p.targetZ = pz;
+        p.anchorX = px; p.anchorZ = pz;
+        p.group.position.set(px, 0, pz);
+      }
+      teleportPlayer(320, 80);
       G.player.heading = Math.PI / 2;
+      G.player.group.rotation.y = G.player.heading;
       G.cameraYaw = Math.PI / 2;
-      G.camOverride = { x: 282, y: 4.5, z: 12, lx: 380, ly: 3, lz: 58 };
+      // Closer and lower than the first attempt: the player reads big at
+      // ~35% width, the pier angles away to the sea at centre, the sun
+      // glows upper-left and the beach umbrellas sit to the right.
+      G.camOverride = { x: 306, y: 2.4, z: 88, lx: 420, ly: 2, lz: 55 };
     } else if (name === 'vista') {
-      G.camOverride = { x: 150, y: 95, z: 305, lx: 430, ly: 0, lz: 10 };
+      // The wider framing: towers and the east avenue with traffic on
+      // the left, the promenade and the pier cutting to the sea in the
+      // middle, beach umbrellas and the sailboats out on the water to
+      // the right, the sun just off-frame.
+      G.camOverride = { x: 120, y: 55, z: 260, lx: 400, ly: 4, lz: -90 };
     }
   },
 };

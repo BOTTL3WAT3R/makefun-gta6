@@ -387,12 +387,47 @@ function buildPalmsAndLamps(scene, rng) {
 const UMBRELLA_COLORS = [0xe84a5f, 0xf2b33c, 0x2e9e8f, 0x3a6fb7, 0xe86ab0, 0xf2782e, 0x7a4fa3, 0xe8e2d2];
 const TOWEL_COLORS = [0xe84a5f, 0x2e9e8f, 0xf2b33c, 0x3a6fb7, 0xf5efdf, 0xe86ab0];
 
+// Sailboats out on the water, north of the pier: hull, mast and a white
+// triangular sail each, bobbing with the marina boats. They give the open
+// sea something to look at from the promenade and the high vista.
+function buildSailboats(scene) {
+  const rng = makeRng(4242);
+  const sailShape = new THREE.Shape();
+  sailShape.moveTo(0, 0);
+  sailShape.lineTo(0, 7.2);
+  sailShape.lineTo(3.4, 0.4);
+  sailShape.lineTo(0, 0);
+  const sailGeo = new THREE.ShapeGeometry(sailShape);
+  const sailMat = new THREE.MeshLambertMaterial({ color: 0xf5f2e8, side: THREE.DoubleSide });
+  const mastMat = new THREE.MeshLambertMaterial({ color: 0x6a4a30 });
+  const hullColors = [0xe8e2d2, 0xb84a3a, 0x3a6a9e];
+  for (let i = 0; i < 3; i++) {
+    const boat = new THREE.Group();
+    const hull = new THREE.Mesh(
+      new THREE.BoxGeometry(6.4, 1.3, 2.4),
+      new THREE.MeshLambertMaterial({ color: hullColors[i] }),
+    );
+    hull.position.y = 0.5;
+    boat.add(hull);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 8), mastMat);
+    mast.position.set(0.4, 4.4, 0);
+    boat.add(mast);
+    const sail = new THREE.Mesh(sailGeo, sailMat);
+    sail.position.set(0.55, 0.9, 0);
+    boat.add(sail);
+    boat.position.set(392 + i * 10 + rng() * 8, 0, -112 - i * 96 - rng() * 18);
+    boat.rotation.y = -Math.PI / 2 + (rng() - 0.5) * 0.5;
+    scene.add(boat);
+    animated.boats.push({ group: boat, phase: 2.1 + i * 1.7 });
+  }
+}
+
 // Beach life on the sand east of the boardwalk: seeded colourful umbrellas
 // (a pole and a cone canopy, no collider — you can stroll between them) with
 // a towel laid out under most of them. Placement is all from the seeded rng.
 function buildBeachLife(scene, rng) {
   const poleMat = new THREE.MeshLambertMaterial({ color: 0xd8d3c8 });
-  for (let i = 0; i < 46; i++) {
+  for (let i = 0; i < 64; i++) {
     const x = 342 + rng() * 24;
     const z = -452 + rng() * 904;
     if (Math.abs(z - CITY.pierZ) < 24) continue; // keep the pier root clear
@@ -488,6 +523,7 @@ export function buildCity(scene) {
   fillBlocks(scene, rng);
   buildSpecials(scene);
   buildPierAndMarina(scene);
+  buildSailboats(scene);
   buildPalmsAndLamps(scene, rng);
   buildBeachLife(scene, rng);
   buildBoardwalkFurniture(scene, rng);
