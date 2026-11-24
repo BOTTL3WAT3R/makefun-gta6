@@ -34,8 +34,35 @@ renderer.domElement.className = 'game-view';
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xf7a56b);
-scene.fog = new THREE.Fog(0xf2a56b, 210, 820);
+scene.background = new THREE.Color(0xe8906a);
+scene.fog = new THREE.Fog(0xeaa06e, 210, 820);
+
+// Gradient sky dome: a big inside-out sphere painted with a vertical canvas
+// gradient — deep dusty blue-violet up top, peach through the middle and a
+// warm glow at the horizon, so the golden hour has depth instead of one
+// flat orange wash. Its material ignores fog so the dome stays the backdrop.
+function skyTexture() {
+  const c = document.createElement('canvas');
+  c.width = 16;
+  c.height = 512;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 512);
+  grad.addColorStop(0.0, '#2e2a55');
+  grad.addColorStop(0.28, '#5c4a78');
+  grad.addColorStop(0.52, '#b06a7d');
+  grad.addColorStop(0.72, '#e88a5f');
+  grad.addColorStop(0.88, '#f7a56b');
+  grad.addColorStop(1.0, '#ffd9a0');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 16, 512);
+  return new THREE.CanvasTexture(c);
+}
+const skyDome = new THREE.Mesh(
+  new THREE.SphereGeometry(1750, 24, 16),
+  new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false, depthWrite: false }),
+);
+skyDome.renderOrder = -10;
+scene.add(skyDome);
 
 const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 2400);
 camera.position.set(240, 60, 300);
@@ -131,8 +158,8 @@ G.hasSaveFile = () => hasSave();
 buildCity(scene);
 G.player = createPlayer(scene);
 G.pilar = spawnPilar(scene);
-G.peds = spawnPedestrians(scene, 26);
-G.vehicles = [...spawnParkedVehicles(scene), ...spawnTraffic(scene, 7)];
+G.peds = spawnPedestrians(scene, 44);
+G.vehicles = [...spawnParkedVehicles(scene), ...spawnTraffic(scene, 12)];
 G.police = createPolice(G);
 G.radio = createRadio(G);
 initCombat(G);
@@ -643,14 +670,14 @@ window.GH = {
     if (name === 'cover') {
       // Hero shot: the Vendaval on the coast road, driver beside it, the city
       // towers up the shore to the left and the pier and sea to the right.
-      const car = makeVehicle('sports', 0xd94f30, 284, 152, Math.PI, 'parked');
+      const car = makeVehicle('sports', 0xd94f30, 270, 150, Math.PI, 'parked');
       G.scene.add(car.group);
       G.vehicles.push(car);
-      teleportPlayer(280.5, 146);
+      teleportPlayer(266.5, 144);
       G.player.heading = Math.PI;
       G.player.group.rotation.y = G.player.heading;
       G.cameraYaw = G.player.heading;
-      G.camOverride = { x: 274, y: 2.7, z: 164, lx: 290, ly: 1.8, lz: 112 };
+      G.camOverride = { x: 262.5, y: 2.4, z: 158.5, lx: 276, ly: 1.5, lz: 137 };
     } else if (name === 'combat') {
       G.job.nextIndex = 3;
       talkToPilar(G);

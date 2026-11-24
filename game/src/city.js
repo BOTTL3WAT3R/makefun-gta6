@@ -349,6 +349,8 @@ function buildPalmsAndLamps(scene, rng) {
   });
   const palmSpots = [];
   for (let z = -456; z <= 456; z += 38) palmSpots.push([284 + (rng() - 0.5) * 8, z]);
+  // A second, sea-side row of palms framing the promenade and the beach.
+  for (let z = -438; z <= 456; z += 57) palmSpots.push([330 + (rng() - 0.5) * 6, z + (rng() - 0.5) * 10]);
   for (let i = 0; i < 16; i++) palmSpots.push([-440 + rng() * 660, -440 + rng() * 880]);
   for (const [x, z] of palmSpots) {
     if (Math.abs(x - Math.round(x / 120) * 120) < 16) continue; // keep off the avenues
@@ -379,6 +381,79 @@ function buildPalmsAndLamps(scene, rng) {
       bulb.position.set(x, 5.8, z);
       scene.add(bulb);
     }
+  }
+}
+
+const UMBRELLA_COLORS = [0xe84a5f, 0xf2b33c, 0x2e9e8f, 0x3a6fb7, 0xe86ab0, 0xf2782e, 0x7a4fa3, 0xe8e2d2];
+const TOWEL_COLORS = [0xe84a5f, 0x2e9e8f, 0xf2b33c, 0x3a6fb7, 0xf5efdf, 0xe86ab0];
+
+// Beach life on the sand east of the boardwalk: seeded colourful umbrellas
+// (a pole and a cone canopy, no collider — you can stroll between them) with
+// a towel laid out under most of them. Placement is all from the seeded rng.
+function buildBeachLife(scene, rng) {
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0xd8d3c8 });
+  for (let i = 0; i < 46; i++) {
+    const x = 342 + rng() * 24;
+    const z = -452 + rng() * 904;
+    if (Math.abs(z - CITY.pierZ) < 24) continue; // keep the pier root clear
+    if (z > -436 && z < -300 && x > 330) continue; // keep the marina docks clear
+    const color = pick(rng, UMBRELLA_COLORS);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.3, 5), poleMat);
+    pole.position.set(x, 1.15, z);
+    pole.rotation.z = (rng() - 0.5) * 0.16;
+    scene.add(pole);
+    const canopy = new THREE.Mesh(
+      new THREE.ConeGeometry(2.35, 0.7, 9),
+      new THREE.MeshLambertMaterial({ color }),
+    );
+    canopy.position.set(x + pole.rotation.z * -2.2, 2.35, z);
+    scene.add(canopy);
+    if (rng() < 0.78) {
+      const towel = new THREE.Mesh(
+        new THREE.BoxGeometry(1.0, 0.06, 2.0),
+        new THREE.MeshLambertMaterial({ color: pick(rng, TOWEL_COLORS) }),
+      );
+      towel.position.set(x + 1.4 + rng() * 1.2, 0.09, z + (rng() - 0.5) * 2.4);
+      towel.rotation.y = rng() * Math.PI;
+      scene.add(towel);
+    }
+  }
+}
+
+// Boardwalk furniture: benches and planters alternating along the promenade,
+// plus a second row of palms on the sea side of the walk. Benches and
+// planters get small colliders; the palms reuse the palm collider size.
+function buildBoardwalkFurniture(scene, rng) {
+  const benchWood = new THREE.MeshLambertMaterial({ color: 0x8a5f36 });
+  const benchIron = new THREE.MeshLambertMaterial({ color: 0x33383f });
+  const planterMat = new THREE.MeshLambertMaterial({ color: 0xb0623f });
+  const shrubMat = new THREE.MeshLambertMaterial({ color: 0x3f7a34 });
+  for (let z = -430; z <= 430; z += 43) {
+    const jz = z + (rng() - 0.5) * 6;
+    if (Math.abs(jz - CITY.pierZ) < 18) continue; // pier entrance stays open
+    // Bench facing the sea.
+    const bench = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 2.4), benchWood);
+    seat.position.y = 0.58;
+    bench.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.7, 2.4), benchWood);
+    back.position.set(-0.3, 1.0, 0);
+    bench.add(back);
+    for (const dz of [-1.0, 1.0]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.12), benchIron);
+      leg.position.set(0, 0.28, dz);
+      bench.add(leg);
+    }
+    bench.position.set(318, 0, jz);
+    scene.add(bench);
+    colliders.push({ minX: 317.6, maxX: 318.4, minZ: jz - 1.2, maxZ: jz + 1.2 });
+    // Planter with a shrub, a few metres along from the bench.
+    const pz = jz + 14 + rng() * 6;
+    addBox(scene, 0.9, 0.62, 2.0, 319, 0.31, pz, planterMat, true);
+    const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.85, 7, 6), shrubMat);
+    shrub.position.set(319, 1.0, pz);
+    shrub.scale.y = 0.75;
+    scene.add(shrub);
   }
 }
 
@@ -414,6 +489,8 @@ export function buildCity(scene) {
   buildSpecials(scene);
   buildPierAndMarina(scene);
   buildPalmsAndLamps(scene, rng);
+  buildBeachLife(scene, rng);
+  buildBoardwalkFurniture(scene, rng);
   buildPlaza(scene);
   return { colliders };
 }
