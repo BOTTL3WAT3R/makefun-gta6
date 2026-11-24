@@ -668,16 +668,36 @@ window.GH = {
     startPlaying();
     G.camOverride = null;
     if (name === 'cover') {
-      // Hero shot: the Vendaval on the coast road, driver beside it, the city
-      // towers up the shore to the left and the pier and sea to the right.
-      const car = makeVehicle('sports', 0xd94f30, 270, 150, Math.PI, 'parked');
+      // Hero shot: the Vendaval fills the lower centre of the east avenue,
+      // driver standing on the camera side of it. The tower blocks line the
+      // left of the frame, a taxi and a sedan give the street depth, and the
+      // car-wash canopy, promenade lamps and palms close the right side.
+      const car = makeVehicle('sports', 0xd94f30, 241, 140, 0, 'parked');
       G.scene.add(car.group);
       G.vehicles.push(car);
-      teleportPlayer(266.5, 144);
+      const taxi = makeVehicle('taxi', 0xf2b33c, 243.5, 112, 0, 'parked');
+      G.scene.add(taxi.group);
+      G.vehicles.push(taxi);
+      const sedan = makeVehicle('sedan', 0x2e6fb7, 216, 117, -Math.PI / 2, 'parked');
+      G.scene.add(sedan.group);
+      G.vehicles.push(sedan);
+      // A few residents stroll the avenue and the street corner.
+      const strollers = [[232, 128], [250.5, 124], [226, 136], [254, 148], [238, 108]];
+      let placed = 0;
+      for (const p of G.peds) {
+        if (placed >= strollers.length) break;
+        if (p.mode !== 'wander') continue;
+        const [px, pz] = strollers[placed++];
+        p.x = px; p.z = pz;
+        p.targetX = px; p.targetZ = pz;
+        p.anchorX = px; p.anchorZ = pz;
+        p.group.position.set(px, 0, pz);
+      }
+      teleportPlayer(245.2, 136.8);
       G.player.heading = Math.PI;
       G.player.group.rotation.y = G.player.heading;
       G.cameraYaw = G.player.heading;
-      G.camOverride = { x: 262.5, y: 2.4, z: 158.5, lx: 276, ly: 1.5, lz: 137 };
+      G.camOverride = { x: 247.5, y: 1.7, z: 147.5, lx: 237.5, ly: 1.3, lz: 128 };
     } else if (name === 'combat') {
       G.job.nextIndex = 3;
       talkToPilar(G);
