@@ -1,21 +1,28 @@
-// hud.js — everything drawn over the 3D world: wallet and wanted stars,
-// health and armour, the objective line, dialogue, job cards, toasts, the
-// BUSTED/WASTED banners, and the live minimap with its blips.
+// hud.js — everything drawn over the 3D world: the objective panel with the
+// job title and progress, wallet and wanted stars, segmented health and
+// armour bars, dialogue, job cards, toasts, the radio toast, the BUSTED /
+// WASTED banners, a player-centred minimap, a speedometer while driving,
+// the interaction prompt, the combat crosshair and the damage vignette.
 
-import { PLACES, ROAD_X, ROAD_Z } from './config.js';
+import { CITY, PLACES, ROAD_X, ROAD_Z } from './config.js';
 import { formatCash, formatTime } from './util.js';
-import { currentLine } from './jobs.js';
+import { activeJobTitle, currentLine, JOBS } from './jobs.js';
 import { playerPos } from './player.js';
+import { input } from './input.js';
 
 const el = {};
+let lastWanted = -1;
+let lastDotsKey = '';
 
 export function initHud(G) {
   for (const id of [
-    'hud', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'package-count',
-    'objective', 'job-timer', 'dialogue', 'dlg-name', 'dlg-text', 'card',
-    'card-title', 'card-sub', 'prompt', 'toast', 'radio-name', 'bust-wrap',
-    'bust-fill', 'banner', 'banner-title', 'banner-sub', 'vignette',
-    'title-screen', 'pause-menu', 'btn-new', 'btn-continue',
+    'hud', 'cash', 'wanted-stars', 'health-fill', 'armor-fill', 'health-wrap',
+    'armor-wrap', 'package-count', 'objective', 'job-kicker', 'job-title',
+    'job-dots', 'job-timer', 'dialogue', 'dlg-name', 'dlg-text', 'card',
+    'card-title', 'card-sub', 'prompt', 'prompt-key', 'prompt-text', 'toast',
+    'radio-name', 'bust-wrap', 'bust-fill', 'banner', 'banner-title',
+    'banner-sub', 'vignette', 'speedo', 'speedo-num', 'speedo-car',
+    'crosshair', 'title-screen', 'pause-menu', 'btn-new', 'btn-continue',
     'btn-resume', 'btn-save', 'btn-quit',
   ]) {
     el[id] = document.getElementById(id);
@@ -45,77 +52,107 @@ export function showPause(G, show) {
   el['pause-menu'].style.display = show ? 'flex' : 'none';
 }
 
+// Player-centred radar: a 250 m window on the city, north up, the player
+// arrow in the middle and the mission blip pinned to the rim when the
+// objective is off-screen.
 function drawMinimap(G) {
   const ctx = el.mapCtx;
-  const S = 190 / 1024;
-  const mx = (x) => (x + 512) * S;
-  const mz = (z) => (z + 512) * S;
-  ctx.fillStyle = '#24313d';
-  ctx.fillRect(0, 0, 190, 190);
-  // Sea and sand.
-  ctx.fillStyle = '#2d6f8e';
-  ctx.fillRect(mx(336), 0, 190 - mx(336), 190);
+  const SIZE = 190;
+  const VIEW = 250; // world metres across the map
+  const S = SIZE / VIEW;
+  const pp = playerPos(G.player);
+  const mx = (x) => SIZE / 2 + (x - pp.x) * S;
+  const mz = (z) => SIZE / 2 + (z - pp.z) * S;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 1, 0, 7);
+  ctx.clip();
+  // Land, then the shore: promenade, sand, sea.
+  ctx.fillStyle = '#2b3644';
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.fillStyle = '#8a6f4d';
+  ctx.fillRect(mx(CITY.promenadeX - 10), 0, (372 - CITY.promenadeX + 10) * S, SIZE);
   ctx.fillStyle = '#e6c98c';
-  ctx.fillRect(mx(330), 0, mx(372) - mx(330), 190);
-  // Roads.
-  ctx.strokeStyle = '#5a6673';
-  ctx.lineWidth = 3;
-  for (const x of ROAD_X) {
-    ctx.beginPath(); ctx.moveTo(mx(x), mz(-480)); ctx.lineTo(mx(x), mz(480)); ctx.stroke();
-  }
-  for (const z of ROAD_Z) {
-    ctx.beginPath(); ctx.moveTo(mx(-480), mz(z)); ctx.lineTo(mx(300), mz(z)); ctx.stroke();
-  }
-  ctx.strokeStyle = '#c8a06a';
-  ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.moveTo(mx(292), mz(-480)); ctx.lineTo(mx(292), mz(480)); ctx.stroke();
+  ctx.fillRect(mx(CITY.sandX), 0, (CITY.waterX - CITY.sandX) * S, SIZE);
+  ctx.fillStyle = '#2d6f8e';
+  ctx.fillRect(mx(CITY.waterX), 0, SIZE - mx(CITY.waterX), SIZE);
+  // Roads as filled strips.
+  ctx.fillStyle = '#59636f';
+  for (const x of ROAD_X) ctx.fillRect(mx(x) - 12 * S, 0, 24 * S, SIZE);
+  for (const z of ROAD_Z) ctx.fillRect(0, mz(z) - 12 * S, SIZE, 24 * S);
+  ctx.fillStyle = '#c8a06a';
+  ctx.fillRect(mx(CITY.promenadeX) - 3 * S, 0, 6 * S, SIZE);
+  // The pier.
+  ctx.fillStyle = '#9a6b44';
+  ctx.fillRect(mx(317), mz(CITY.pierZ) - 13 * S, (467 - 317) * S, 26 * S);
   // Plaza.
   ctx.fillStyle = '#8a7c62';
-  ctx.beginPath(); ctx.arc(mx(PLACES.plaza.x), mz(PLACES.plaza.z), 5, 0, 7); ctx.fill();
+  ctx.beginPath(); ctx.arc(mx(PLACES.plaza.x), mz(PLACES.plaza.z), 36 * S, 0, 7); ctx.fill();
 
+  const inView = (x, z) => Math.abs(x - pp.x) < VIEW / 2 && Math.abs(z - pp.z) < VIEW / 2;
   // Packages still out there.
   ctx.fillStyle = '#ffe9a0';
   for (const p of G.activities.packages) {
-    if (p.taken) continue;
-    ctx.fillRect(mx(p.x) - 1, mz(p.z) - 1, 2, 2);
-  }
-  // The objective, gold for story, green for activities.
-  const objective = G.job.objective || G.activityObjective;
-  if (objective) {
-    const pulse = 3 + Math.sin(G.elapsed * 5) * 1.2;
-    ctx.strokeStyle = G.job.objective ? '#ffca3a' : '#7ddb4a';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), pulse + 2, 0, 7); ctx.stroke();
-    ctx.fillStyle = ctx.strokeStyle;
-    ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), 2, 0, 7); ctx.fill();
+    if (p.taken || !inView(p.x, p.z)) continue;
+    ctx.fillRect(mx(p.x) - 1.5, mz(p.z) - 1.5, 3, 3);
   }
   // Police: alternating red/blue blips.
   const phase = Math.floor(G.elapsed * 2.4) % 2;
   for (const u of G.police.units) {
+    if (!inView(u.x, u.z)) continue;
     ctx.fillStyle = phase === 0 ? '#ff4030' : '#3a6aff';
-    ctx.beginPath(); ctx.arc(mx(u.x), mz(u.z), 2.6, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx(u.x), mz(u.z), 3, 0, 7); ctx.fill();
   }
   if (G.police.heli) {
-    ctx.fillStyle = '#c89aff';
-    ctx.beginPath();
-    ctx.arc(mx(G.police.heli.group.position.x), mz(G.police.heli.group.position.z), 3, 0, 7);
-    ctx.fill();
+    const hx = G.police.heli.group.position.x;
+    const hz = G.police.heli.group.position.z;
+    if (inView(hx, hz)) {
+      ctx.fillStyle = '#c89aff';
+      ctx.beginPath(); ctx.arc(mx(hx), mz(hz), 3.4, 0, 7); ctx.fill();
+    }
   }
-  // The player: a white arrow on their heading.
-  const pp = playerPos(G.player);
+  // The objective: a pulsing ring in view, a rim blip when it is not.
+  const objective = G.job.objective || G.activityObjective;
+  if (objective) {
+    const gold = !!G.job.objective;
+    ctx.strokeStyle = gold ? '#ffca3a' : '#7ddb4a';
+    ctx.fillStyle = ctx.strokeStyle;
+    if (inView(objective.x, objective.z)) {
+      const pulse = 4 + Math.sin(G.elapsed * 5) * 1.4;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), pulse + 2.5, 0, 7); ctx.stroke();
+      ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), 2.4, 0, 7); ctx.fill();
+    } else {
+      const ang = Math.atan2(objective.z - pp.z, objective.x - pp.x);
+      const bx = SIZE / 2 + Math.cos(ang) * (SIZE / 2 - 11);
+      const bz = SIZE / 2 + Math.sin(ang) * (SIZE / 2 - 11);
+      ctx.beginPath(); ctx.arc(bx, bz, 4.5, 0, 7); ctx.fill();
+    }
+  }
+  // The player: a white arrow on their heading, centre of the map.
   const heading = G.player.inVehicle ? G.player.inVehicle.heading : G.player.heading;
   ctx.save();
-  ctx.translate(mx(pp.x), mz(pp.z));
+  ctx.translate(SIZE / 2, SIZE / 2);
   ctx.rotate(Math.PI - heading); // the arrow is drawn pointing up (north)
   ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = 'rgba(10,10,14,0.7)';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(0, -6);
-  ctx.lineTo(4, 5);
-  ctx.lineTo(0, 2.4);
-  ctx.lineTo(-4, 5);
+  ctx.moveTo(0, -7);
+  ctx.lineTo(4.6, 5.6);
+  ctx.lineTo(0, 2.8);
+  ctx.lineTo(-4.6, 5.6);
   ctx.closePath();
   ctx.fill();
+  ctx.stroke();
   ctx.restore();
+  ctx.restore();
+  // North marker.
+  ctx.fillStyle = 'rgba(253,246,233,0.85)';
+  ctx.font = '800 11px Verdana, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', SIZE / 2, 14);
 }
 
 export function updateHud(G) {
@@ -123,15 +160,40 @@ export function updateHud(G) {
   const player = G.player;
   el.cash.textContent = formatCash(player.cash);
   const wanted = Math.max(G.police.wanted, G.police.heatFloor);
-  el['wanted-stars'].textContent = '★'.repeat(wanted) + '☆'.repeat(5 - wanted);
-  el['wanted-stars'].style.opacity = wanted > 0 ? '1' : '0.25';
+  if (wanted !== lastWanted) {
+    lastWanted = wanted;
+    let stars = '';
+    for (let i = 0; i < 5; i++) stars += '<span class="star' + (i < wanted ? ' on' : '') + '">★</span>';
+    el['wanted-stars'].innerHTML = stars;
+  }
   el['health-fill'].style.width = player.health + '%';
   el['health-fill'].style.background = player.health > 45 ? '#7ddb4a' : player.health > 22 ? '#e8b93c' : '#d93a2e';
+  el['health-wrap'].classList.toggle('low', player.health <= 25 && player.health > 0);
   el['armor-fill'].style.width = player.armor + '%';
   el['package-count'].textContent = '📦 ' + G.activities.packagesFound + '/15';
 
+  // Objective panel: kicker (job n of 7), title, objective line, dots.
+  const active = G.job.active;
+  const title = activeJobTitle(G);
+  el['job-kicker'].textContent = active
+    ? active.def.subtitle.toUpperCase()
+    : (G.storyDone ? 'ALL SEVEN JOBS DONE' : 'COSTA VERA · GOLDEN HOUR');
+  el['job-title'].textContent = title || (G.storyDone ? 'The city is yours' : 'Free roam');
   const objective = G.job.objective || G.activityObjective;
-  el.objective.textContent = objective ? '◎ ' + objective.label : '';
+  el.objective.textContent = objective
+    ? '◎ ' + objective.label
+    : (active ? '' : 'Talk to Pilar by the pier for work');
+  const dotsKey = G.job.nextIndex + '|' + (active ? 'a' : '') + '|' + G.storyDone;
+  if (dotsKey !== lastDotsKey) {
+    lastDotsKey = dotsKey;
+    let dots = '';
+    for (let i = 0; i < JOBS.length; i++) {
+      const cls = i < G.job.nextIndex || G.storyDone ? 'done' : (active && i === G.job.nextIndex ? 'current' : '');
+      dots += '<span class="dot ' + cls + '"></span>';
+    }
+    el['job-dots'].innerHTML = dots;
+  }
+
   if (G.job.timer !== null && G.job.timer !== undefined) {
     el['job-timer'].textContent = '⏱ ' + formatTime(G.job.timer);
     el['job-timer'].style.color = G.job.timer < 25 ? '#ff5040' : '#ffe9a0';
@@ -162,8 +224,18 @@ export function updateHud(G) {
     el.card.style.display = 'none';
   }
 
-  el.prompt.textContent = G.prompt || '';
-  el.prompt.style.display = G.prompt ? 'block' : 'none';
+  // Interaction prompt: a key pill plus the action text.
+  const rawPrompt = G.prompt || '';
+  if (rawPrompt) {
+    let text = rawPrompt;
+    if (rawPrompt.startsWith('E — ')) text = rawPrompt.slice(4);
+    else if (rawPrompt.startsWith('E - ')) text = rawPrompt.slice(4);
+    el['prompt-key'].style.display = text !== rawPrompt ? 'inline-block' : 'none';
+    el['prompt-text'].textContent = text;
+    el.prompt.style.display = 'flex';
+  } else {
+    el.prompt.style.display = 'none';
+  }
 
   if (G.toastMsg && G.elapsed < G.toastMsg.until) {
     el.toast.textContent = G.toastMsg.text;
@@ -172,11 +244,27 @@ export function updateHud(G) {
     el.toast.style.display = 'none';
   }
 
-  if (G.radioDisplay && G.elapsed < G.radioDisplay.until) {
-    el['radio-name'].textContent = G.radioDisplay.text;
-    el['radio-name'].style.display = 'block';
+  // The radio toast fades in and out on a class, not a hard display cut.
+  const radioOn = !!(G.radioDisplay && G.elapsed < G.radioDisplay.until);
+  if (radioOn) el['radio-name'].textContent = G.radioDisplay.text;
+  el['radio-name'].classList.toggle('show', radioOn);
+
+  // Speedometer while driving.
+  if (player.inVehicle) {
+    el.speedo.style.display = 'flex';
+    el['speedo-num'].textContent = String(Math.round(Math.abs(player.inVehicle.speed) * 3.6));
+    el['speedo-car'].textContent = player.inVehicle.stats.name;
   } else {
-    el['radio-name'].style.display = 'none';
+    el.speedo.style.display = 'none';
+  }
+
+  // Crosshair at the mouse while aiming (combat mode).
+  if (G.aiming) {
+    el.crosshair.style.display = 'block';
+    el.crosshair.style.left = input.mouseX + 'px';
+    el.crosshair.style.top = input.mouseY + 'px';
+  } else {
+    el.crosshair.style.display = 'none';
   }
 
   if (G.bustProgress > 0.03 && wanted > 0) {
@@ -194,6 +282,6 @@ export function updateHud(G) {
     el.banner.style.display = 'none';
   }
 
-  el.vignette.style.opacity = String(Math.min(0.6, G.hudFlash * 0.6));
+  el.vignette.style.opacity = String(Math.min(0.65, G.hudFlash * 0.65));
   drawMinimap(G);
 }

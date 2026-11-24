@@ -18,7 +18,9 @@ const BODY_DIMS = {
 const GLASS_MAT = new THREE.MeshLambertMaterial({ color: 0x223140 });
 const TYRE_MAT = new THREE.MeshLambertMaterial({ color: 0x17181c });
 const LIGHT_MAT = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+LIGHT_MAT.color.setRGB(2.8, 2.5, 1.6); // HDR — headlights feed the bloom pass
 const TAIL_MAT = new THREE.MeshBasicMaterial({ color: 0xd93a2e });
+TAIL_MAT.color.setRGB(2.6, 0.4, 0.3);
 
 // Builds the visual for one car. Front of the car faces +Z locally.
 export function makeCarMesh(type, colorHex) {
@@ -43,9 +45,11 @@ export function makeCarMesh(type, colorHex) {
     group.add(bed);
   }
   if (type === 'taxi') {
+    const taxiSignMat = new THREE.MeshBasicMaterial({ color: 0xffe9a0 });
+    taxiSignMat.color.setRGB(1.9, 1.6, 0.9); // lit roof sign — blooms softly
     const sign = new THREE.Mesh(
       new THREE.BoxGeometry(0.9, 0.32, 0.4),
-      new THREE.MeshBasicMaterial({ color: 0xffe9a0 }),
+      taxiSignMat,
     );
     sign.position.set(0, 0.38 + dims.h + dims.cabin + 0.18, -dims.l * 0.04);
     group.add(sign);
@@ -72,6 +76,12 @@ export function makeCarMesh(type, colorHex) {
     tail.position.set(side * dims.w * 0.32, 0.72, -dims.l / 2 - 0.02);
     group.add(tail);
   }
+  group.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
   group.userData.wheels = wheels;
   group.userData.dims = dims;
   return group;

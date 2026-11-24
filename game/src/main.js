@@ -2,7 +2,11 @@
 // runs the frame loop, the camera, entering and leaving cars, arrests and
 // hospital trips, and the window.GH hooks the test harness drives.
 
-import * as THREE from '../three.module.min.js';
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { PLACES, PLAYER_START } from './config.js';
 import { clamp, damp, turnToward } from './util.js';
 import { flushInput, initInput, input, moveAxes } from './input.js';
@@ -28,14 +32,19 @@ import { applySave, hasSave, loadSave, saveGame } from './save.js';
 // --- Renderer, scene, golden-hour light ---------------------------------------
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.domElement.className = 'game-view';
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xe8906a);
-scene.fog = new THREE.Fog(0xeaa06e, 210, 820);
+scene.fog = new THREE.Fog(0xf2a56b, 210, 820);
 
 // Gradient sky dome: a big inside-out sphere painted with a vertical canvas
 // gradient — deep dusty blue-violet up top, peach through the middle and a
@@ -68,14 +77,40 @@ const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerH
 camera.position.set(240, 60, 300);
 camera.lookAt(330, 0, 60);
 
-const hemi = new THREE.HemisphereLight(0xffd9a8, 0x6b4a3f, 0.95);
+// Post-processing: scene -> bloom -> output (tone mapping + sRGB live in
+// the OutputPass, the r160 way). Emissive colours pushed past 1.0 in the
+// city and vehicles are what feed the bloom pass.
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.5, 0.85,
+);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
+const hemi = new THREE.HemisphereLight(0x9fc3e8, 0x8a5a3a, 1.05);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffb36b, 1.35);
+const sun = new THREE.DirectionalLight(0xffb36b, 1.6);
 sun.position.set(500, 170, 160);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -430;
+sun.shadow.camera.right = 430;
+sun.shadow.camera.top = 430;
+sun.shadow.camera.bottom = -430;
+sun.shadow.camera.near = 50;
+sun.shadow.camera.far = 1200;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.5;
+sun.shadow.camera.updateProjectionMatrix();
+sun.target.position.set(40, 0, 0);
 scene.add(sun);
+scene.add(sun.target);
 const fill = new THREE.DirectionalLight(0x7fb3c8, 0.25);
 fill.position.set(-300, 200, -200);
 scene.add(fill);
+const ambient = new THREE.AmbientLight(0xffd9b0, 0.3);
+scene.add(ambient);
 
 // Soft radial glow, painted at runtime — the sun and clouds are feathered
 // sprites, never hard-edged squares.
@@ -100,6 +135,7 @@ const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
 }));
 sunSprite.position.set(1150, 120, 220);
 sunSprite.scale.set(300, 300, 1);
+sunSprite.material.color.setRGB(1.8, 1.4, 1.0); // HDR push so the sun blooms
 scene.add(sunSprite);
 
 // A few soft sunset clouds high over the city.
@@ -500,7 +536,7 @@ function frame() {
   updateRadio(G, dt);
   updateCamera(dt);
   updateHud(G);
-  renderer.render(scene, camera);
+  composer.render();
   flushInput();
 }
 
@@ -508,6 +544,7 @@ window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  composer.setSize(window.innerWidth, window.innerHeight);
 });
 
 showTitle(G, true);
@@ -606,6 +643,7 @@ window.GH = {
     // Test hook: shrink the renderer's backing store so software-rendered
     // environments (CI, headless) run the simulation closer to real time.
     renderer.setPixelRatio(0.5);
+    composer.setPixelRatio(0.5);
   },
   targetPos() {
     return G.targetPed ? { x: G.targetPed.x, z: G.targetPed.z } : null;

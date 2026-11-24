@@ -54,12 +54,14 @@ function makeCruiser(x, z, heading) {
     new THREE.MeshLambertMaterial({ color: 0x1d2a47 }),
   );
   stripe.position.y = 0.62;
+  stripe.castShadow = true;
   group.add(stripe);
   const barBase = new THREE.Mesh(
     new THREE.BoxGeometry(1.2, 0.1, 0.4),
     new THREE.MeshLambertMaterial({ color: 0x22242a }),
   );
   barBase.position.set(0, 1.62, -0.2);
+  barBase.castShadow = true;
   group.add(barBase);
   const redMat = new THREE.MeshBasicMaterial({ color: 0xff2a20 });
   const blueMat = new THREE.MeshBasicMaterial({ color: 0x2255ff });
@@ -134,9 +136,11 @@ function spawnHeli(G) {
   const bodyMat = new THREE.MeshLambertMaterial({ color: 0x1d2a47 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 7.5), bodyMat);
   body.position.y = 0;
+  body.castShadow = true;
   group.add(body);
   const tail = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 6.5), bodyMat);
   tail.position.set(0, 0.5, -6.4);
+  tail.castShadow = true;
   group.add(tail);
   const rotorMat = new THREE.MeshBasicMaterial({ color: 0x22242a, transparent: true, opacity: 0.55 });
   const rotor = new THREE.Mesh(new THREE.PlaneGeometry(13, 1.1), rotorMat);
@@ -203,8 +207,11 @@ export function updatePolice(G, dt) {
   // Flashers.
   const phase = Math.floor(G.elapsed * 2.4) % 2;
   for (const u of P.units) {
-    u.flashers[0].color.setHex(phase === 0 ? 0xff2a20 : 0x5e130e);
-    u.flashers[1].color.setHex(phase === 0 ? 0x101d5e : 0x2255ff);
+    // HDR values on the lit side so the light bar blooms as it flashes.
+    if (phase === 0) u.flashers[0].color.setRGB(3.2, 0.35, 0.25);
+    else u.flashers[0].color.setRGB(0.37, 0.07, 0.05);
+    if (phase === 0) u.flashers[1].color.setRGB(0.06, 0.11, 0.37);
+    else u.flashers[1].color.setRGB(0.3, 0.45, 3.2);
   }
 
   for (const u of [...P.units]) updateCruiser(G, u, dt);

@@ -111,6 +111,8 @@ function signTexture(text, bg, fg) {
 function addBox(scene, w, h, d, x, y, z, material, collide = false) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
   scene.add(mesh);
   if (collide) {
     colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
@@ -120,6 +122,7 @@ function addBox(scene, w, h, d, x, y, z, material, collide = false) {
 
 function addSign(scene, text, x, y, z, rotY, bg = '#26324e', fg = '#ffd98a') {
   const mat = new THREE.MeshBasicMaterial({ map: signTexture(text, bg, fg) });
+  mat.color.setScalar(1.5); // push the lit letters past the bloom threshold
   const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 4), mat);
   sign.position.set(x, y, z);
   sign.rotation.y = rotY;
@@ -230,6 +233,7 @@ function buildGround(scene) {
   );
   base.rotation.x = -Math.PI / 2;
   base.position.set(-90, 0, 0);
+  base.receiveShadow = true;
   scene.add(base);
 
   // Roads: a pale kerb slab under each, the asphalt strip on top.
@@ -238,23 +242,23 @@ function buildGround(scene) {
   const roadMatH = new THREE.MeshLambertMaterial({ map: roadTextureH() });
   for (const x of ROAD_X) {
     const kerb = new THREE.Mesh(new THREE.PlaneGeometry(33, 984), kerbMat);
-    kerb.rotation.x = -Math.PI / 2; kerb.position.set(x, 0.02, 0); scene.add(kerb);
+    kerb.rotation.x = -Math.PI / 2; kerb.position.set(x, 0.02, 0); kerb.receiveShadow = true; scene.add(kerb);
     const road = new THREE.Mesh(new THREE.PlaneGeometry(24, 984), roadMat);
-    road.rotation.x = -Math.PI / 2; road.position.set(x, 0.04, 0); scene.add(road);
+    road.rotation.x = -Math.PI / 2; road.position.set(x, 0.04, 0); road.receiveShadow = true; scene.add(road);
   }
   for (const z of ROAD_Z) {
     const kerb = new THREE.Mesh(new THREE.PlaneGeometry(792, 33), kerbMat);
-    kerb.rotation.x = -Math.PI / 2; kerb.position.set(-90, 0.02, z); scene.add(kerb);
+    kerb.rotation.x = -Math.PI / 2; kerb.position.set(-90, 0.02, z); kerb.receiveShadow = true; scene.add(kerb);
     const road = new THREE.Mesh(new THREE.PlaneGeometry(792, 24), roadMatH);
-    road.rotation.x = -Math.PI / 2; road.position.set(-90, 0.04, z); scene.add(road);
+    road.rotation.x = -Math.PI / 2; road.position.set(-90, 0.04, z); road.receiveShadow = true; scene.add(road);
   }
 
   // Club Brisa car park and marina parking aprons.
   const lotMat = new THREE.MeshLambertMaterial({ color: 0x4a4d54 });
   const lot = new THREE.Mesh(new THREE.PlaneGeometry(76, 42), lotMat);
-  lot.rotation.x = -Math.PI / 2; lot.position.set(168, 0.05, -272); scene.add(lot);
+  lot.rotation.x = -Math.PI / 2; lot.position.set(168, 0.05, -272); lot.receiveShadow = true; scene.add(lot);
   const marinaLot = new THREE.Mesh(new THREE.PlaneGeometry(56, 60), lotMat);
-  marinaLot.rotation.x = -Math.PI / 2; marinaLot.position.set(292, 0.05, -318); scene.add(marinaLot);
+  marinaLot.rotation.x = -Math.PI / 2; marinaLot.position.set(292, 0.05, -318); marinaLot.receiveShadow = true; scene.add(marinaLot);
 
   // The promenade: wooden boardwalk the length of the shore.
   const walk = new THREE.Mesh(
@@ -263,6 +267,7 @@ function buildGround(scene) {
   );
   walk.rotation.x = -Math.PI / 2;
   walk.position.set(CITY.promenadeX + 22, 0.06, 0);
+  walk.receiveShadow = true;
   scene.add(walk);
 
   // Beach and sea.
@@ -270,7 +275,7 @@ function buildGround(scene) {
     new THREE.PlaneGeometry(60, 1020),
     new THREE.MeshLambertMaterial({ color: 0xe6c98c }),
   );
-  sand.rotation.x = -Math.PI / 2; sand.position.set(356, 0.03, 0); scene.add(sand);
+  sand.rotation.x = -Math.PI / 2; sand.position.set(356, 0.03, 0); sand.receiveShadow = true; scene.add(sand);
   const sea = new THREE.Mesh(
     new THREE.PlaneGeometry(760, 1400),
     new THREE.MeshLambertMaterial({ map: waterTexture(), transparent: true, opacity: 0.94 }),
@@ -284,6 +289,8 @@ function buildPierAndMarina(scene) {
   // Pier deck, running east from the promenade.
   const deck = new THREE.Mesh(new THREE.BoxGeometry(150, 1.2, 26), woodMat);
   deck.position.set(392, 1.1, CITY.pierZ);
+  deck.castShadow = true;
+  deck.receiveShadow = true;
   scene.add(deck);
   colliders.push({ minX: 466, maxX: 470, minZ: CITY.pierZ - 13, maxZ: CITY.pierZ + 13 }); // end stop
   for (let x = 330; x <= 460; x += 16) {
@@ -297,6 +304,8 @@ function buildPierAndMarina(scene) {
     const z = -336 - f * 34;
     const finger = new THREE.Mesh(new THREE.BoxGeometry(96, 1, 8), woodMat);
     finger.position.set(384, 0.9, z);
+    finger.castShadow = true;
+    finger.receiveShadow = true;
     scene.add(finger);
     for (let b = 0; b < 2; b++) {
       const boat = new THREE.Group();
@@ -347,6 +356,10 @@ function buildPalmsAndLamps(scene, rng) {
   const frondMat = new THREE.MeshLambertMaterial({
     map: PALM_FROND_TEX(), transparent: true, alphaTest: 0.35, side: THREE.DoubleSide,
   });
+  // So the fronds cast frond-shaped shadows instead of solid squares.
+  const frondDepthMat = new THREE.MeshDepthMaterial({
+    depthPacking: THREE.RGBADepthPacking, map: frondMat.map, alphaTest: 0.35,
+  });
   const palmSpots = [];
   for (let z = -456; z <= 456; z += 38) palmSpots.push([284 + (rng() - 0.5) * 8, z]);
   // A second, sea-side row of palms framing the promenade and the beach.
@@ -358,11 +371,14 @@ function buildPalmsAndLamps(scene, rng) {
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.42, 7.5, 6), trunkMat);
     trunk.position.y = 3.75;
     trunk.rotation.z = (rng() - 0.5) * 0.14;
+    trunk.castShadow = true;
     palm.add(trunk);
     for (let p = 0; p < 3; p++) {
       const fronds = new THREE.Mesh(new THREE.PlaneGeometry(8.5, 8.5), frondMat);
       fronds.position.y = 7.6;
       fronds.rotation.set(-Math.PI / 2 + (rng() - 0.5) * 0.5, 0, (p * Math.PI) / 3);
+      fronds.castShadow = true;
+      fronds.customDepthMaterial = frondDepthMat;
       palm.add(fronds);
     }
     palm.position.set(x, 0, z);
@@ -372,10 +388,12 @@ function buildPalmsAndLamps(scene, rng) {
   // Lamp posts along the promenade and plaza.
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x3a3f46 });
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  bulbMat.color.setRGB(3.2, 2.2, 1.15); // HDR warm — the lamps bloom at dusk
   for (let z = -440; z <= 440; z += 55) {
     for (const x of [268, 322]) {
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 5.6, 5), poleMat);
       pole.position.set(x, 2.8, z);
+      pole.castShadow = true;
       scene.add(pole);
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 6), bulbMat);
       bulb.position.set(x, 5.8, z);
@@ -443,6 +461,24 @@ function buildFoodTruck(scene) {
   awning.rotation.x = 0.35;
   // Menu board beside the hatch.
   addBox(scene, 0.9, 1.2, 0.08, 331.6, 1.5, 83.25, white, false);
+  // A warm neon strip under the roof line and a string of bulbs under the
+  // awning — HDR-bright basics, so the truck glows into the bloom pass —
+  // plus one real point light to spill that warmth onto the boardwalk.
+  const neonMat = new THREE.MeshBasicMaterial({ color: 0xff9e4a });
+  neonMat.color.setRGB(2.8, 1.5, 0.65);
+  const neon = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.14, 0.1), neonMat);
+  neon.position.set(330, 2.48, 83.24);
+  scene.add(neon);
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0 });
+  bulbMat.color.setRGB(3.0, 2.1, 1.1);
+  for (let i = 0; i < 5; i++) {
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.09, 6, 5), bulbMat);
+    bulb.position.set(327.9 + i * 0.65, 2.14 - Math.sin((i / 4) * Math.PI) * 0.12, 84.15);
+    scene.add(bulb);
+  }
+  const truckGlow = new THREE.PointLight(0xffa050, 26, 20, 2);
+  truckGlow.position.set(329.2, 2.3, 85.2);
+  scene.add(truckGlow);
   // Wheels.
   const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10);
   for (const [wx, wz] of [[328.2, 80.9], [331.8, 80.9], [328.2, 83.1], [331.8, 83.1]]) {
@@ -477,12 +513,14 @@ function buildBeachLife(scene, rng) {
     const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.3, 5), poleMat);
     pole.position.set(x, 1.15, z);
     pole.rotation.z = (rng() - 0.5) * 0.16;
+    pole.castShadow = true;
     scene.add(pole);
     const canopy = new THREE.Mesh(
       new THREE.ConeGeometry(2.35, 0.7, 9),
       new THREE.MeshLambertMaterial({ color }),
     );
     canopy.position.set(x + pole.rotation.z * -2.2, 2.35, z);
+    canopy.castShadow = true;
     scene.add(canopy);
     if (rng() < 0.78) {
       const towel = new THREE.Mesh(
@@ -511,13 +549,16 @@ function buildBoardwalkFurniture(scene, rng) {
     const bench = new THREE.Group();
     const seat = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 2.4), benchWood);
     seat.position.y = 0.58;
+    seat.castShadow = true;
     bench.add(seat);
     const back = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.7, 2.4), benchWood);
     back.position.set(-0.3, 1.0, 0);
+    back.castShadow = true;
     bench.add(back);
     for (const dz of [-1.0, 1.0]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.12), benchIron);
       leg.position.set(0, 0.28, dz);
+      leg.castShadow = true;
       bench.add(leg);
     }
     bench.position.set(318, 0, jz);
@@ -529,6 +570,7 @@ function buildBoardwalkFurniture(scene, rng) {
     const shrub = new THREE.Mesh(new THREE.SphereGeometry(0.85, 7, 6), shrubMat);
     shrub.position.set(319, 1.0, pz);
     shrub.scale.y = 0.75;
+    shrub.castShadow = true;
     scene.add(shrub);
   }
 }
@@ -540,12 +582,15 @@ function buildPlaza(scene) {
   );
   disc.rotation.x = -Math.PI / 2;
   disc.position.set(PLACES.plaza.x, 0.07, PLACES.plaza.z);
+  disc.receiveShadow = true;
   scene.add(disc);
   const basin = new THREE.Mesh(
     new THREE.CylinderGeometry(7, 8, 1.6, 18),
     new THREE.MeshLambertMaterial({ color: 0x9a8f7c }),
   );
   basin.position.set(PLACES.plaza.x, 0.8, PLACES.plaza.z);
+  basin.castShadow = true;
+  basin.receiveShadow = true;
   scene.add(basin);
   const water = new THREE.Mesh(
     new THREE.CircleGeometry(6.2, 18),

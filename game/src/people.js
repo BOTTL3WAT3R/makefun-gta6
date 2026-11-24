@@ -43,6 +43,9 @@ export function makePersonMesh(shirtColor, opts = {}) {
     group.add(cap);
   }
   group.userData = { legL, legR, armL, armR, torso };
+  group.traverse((o) => {
+    if (o.isMesh) o.castShadow = true;
+  });
   return group;
 }
 
