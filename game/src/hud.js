@@ -29,6 +29,8 @@ export function initHud(G) {
   }
   el.minimap = document.getElementById('minimap');
   el.mapCtx = el.minimap.getContext('2d');
+  el.bigmap = document.getElementById('bigmap');
+  el.bigmapCtx = document.getElementById('bigmap-canvas').getContext('2d');
 
   el['btn-new'].addEventListener('click', () => G.ui.newGame());
   el['btn-continue'].addEventListener('click', () => G.ui.continueGame());
@@ -153,6 +155,103 @@ function drawMinimap(G) {
   ctx.font = '800 11px Verdana, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('N', SIZE / 2, 14);
+}
+
+// Full-screen map (M): the whole city on one canvas, drawn from the same
+// layout data as the minimap — roads, shore, pier and plaza — with the
+// player arrow, the objective ring, police and packages over it. World
+// extents x -500..500, z -500..500 mapped onto the square canvas.
+export function showBigMap(G, show) {
+  el.bigmap.style.display = show ? 'flex' : 'none';
+  if (show) drawBigMap(G);
+}
+
+export function drawBigMap(G) {
+  const ctx = el.bigmapCtx;
+  const W = 960;
+  const H = 760;
+  const mx = (x) => ((x + 500) / 1000) * W;
+  const mz = (z) => ((z + 500) / 1000) * H;
+  const S = W / 1000; // pixels per metre (x axis; z is close enough)
+
+  ctx.fillStyle = '#2b3644';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#8a6f4d';
+  ctx.fillRect(mx(CITY.promenadeX - 10), 0, mx(CITY.waterX) - mx(CITY.promenadeX - 10), H);
+  ctx.fillStyle = '#e6c98c';
+  ctx.fillRect(mx(CITY.sandX), 0, mx(CITY.waterX) - mx(CITY.sandX), H);
+  ctx.fillStyle = '#2d6f8e';
+  ctx.fillRect(mx(CITY.waterX), 0, W - mx(CITY.waterX), H);
+  ctx.fillStyle = '#59636f';
+  for (const x of ROAD_X) ctx.fillRect(mx(x) - 12 * S, 0, 24 * S, H);
+  for (const z of ROAD_Z) ctx.fillRect(0, mz(z) - 12 * S, W, 24 * S);
+  ctx.fillStyle = '#c8a06a';
+  ctx.fillRect(mx(CITY.promenadeX) - 3 * S, 0, 6 * S, H);
+  ctx.fillStyle = '#9a6b44';
+  ctx.fillRect(mx(317), mz(CITY.pierZ) - 13 * S, mx(467) - mx(317), 26 * S);
+  ctx.fillStyle = '#8a7c62';
+  ctx.beginPath(); ctx.arc(mx(PLACES.plaza.x), mz(PLACES.plaza.z), 36 * S, 0, 7); ctx.fill();
+
+  // Named places worth finding again.
+  ctx.fillStyle = 'rgba(253,246,233,0.85)';
+  ctx.font = '700 12px Verdana, sans-serif';
+  ctx.textAlign = 'left';
+  for (const key of ['comisaria', 'clinica', 'clubBrisa', 'marina', 'plaza', 'safehouse']) {
+    const p = PLACES[key];
+    ctx.beginPath(); ctx.arc(mx(p.x), mz(p.z), 3.5, 0, 7); ctx.fill();
+    ctx.fillText(p.label, mx(p.x) + 8, mz(p.z) + 4);
+  }
+  // Packages still out there.
+  ctx.fillStyle = '#ffe9a0';
+  for (const p of G.activities.packages) {
+    if (p.taken) continue;
+    ctx.fillRect(mx(p.x) - 3, mz(p.z) - 3, 6, 6);
+  }
+  // Police.
+  const phase = Math.floor(G.elapsed * 2.4) % 2;
+  for (const u of G.police.units) {
+    ctx.fillStyle = phase === 0 ? '#ff4030' : '#3a6aff';
+    ctx.beginPath(); ctx.arc(mx(u.x), mz(u.z), 5, 0, 7); ctx.fill();
+  }
+  if (G.police.heli) {
+    ctx.fillStyle = '#c89aff';
+    ctx.beginPath();
+    ctx.arc(mx(G.police.heli.group.position.x), mz(G.police.heli.group.position.z), 5.5, 0, 7);
+    ctx.fill();
+  }
+  // The objective: a pulsing gold (job) or green (activity) ring.
+  const objective = G.job.objective || G.activityObjective;
+  if (objective) {
+    ctx.strokeStyle = G.job.objective ? '#ffca3a' : '#7ddb4a';
+    ctx.lineWidth = 3;
+    const pulse = 11 + Math.sin(G.elapsed * 5) * 2.5;
+    ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), pulse, 0, 7); ctx.stroke();
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.beginPath(); ctx.arc(mx(objective.x), mz(objective.z), 4, 0, 7); ctx.fill();
+  }
+  // The player arrow on their heading.
+  const pp = playerPos(G.player);
+  const heading = G.player.inVehicle ? G.player.inVehicle.heading : G.player.heading;
+  ctx.save();
+  ctx.translate(mx(pp.x), mz(pp.z));
+  ctx.rotate(Math.PI - heading);
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = 'rgba(10,10,14,0.75)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -12);
+  ctx.lineTo(8, 10);
+  ctx.lineTo(0, 5);
+  ctx.lineTo(-8, 10);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+  // North marker.
+  ctx.fillStyle = 'rgba(253,246,233,0.9)';
+  ctx.font = '800 15px Verdana, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', W / 2, 22);
 }
 
 export function updateHud(G) {
@@ -284,4 +383,5 @@ export function updateHud(G) {
 
   el.vignette.style.opacity = String(Math.min(0.65, G.hudFlash * 0.65));
   drawMinimap(G);
+  if (G.mapOpen) drawBigMap(G);
 }

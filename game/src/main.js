@@ -7,7 +7,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { PLACES, PLAYER_START } from './config.js';
+import { PLACES, PLAYER_START, ROAD_X, ROAD_Z } from './config.js';
 import { clamp, damp, turnToward } from './util.js';
 import { flushInput, initInput, input, moveAxes } from './input.js';
 import { buildCity, surfaceAt, updateCity } from './city.js';
@@ -25,13 +25,23 @@ import {
   advanceDialogue, createJobState, initMarker, pilarDistance, showCard, talkToPilar, updateJobs, JOBS,
 } from './jobs.js';
 import { activityInteract, createActivities, initActivities, spawnFare, updateActivities } from './activities.js';
-import { initHud, showPause, showTitle, updateHud } from './hud.js';
+import { drawBigMap, initHud, showBigMap, showPause, showTitle, updateHud } from './hud.js';
 import { createRadio, nextStation, stationName, updateRadio } from './radio.js';
 import { applySave, hasSave, loadSave, saveGame } from './save.js';
 
 // --- Renderer, scene, golden-hour light ---------------------------------------
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+// If WebGL is unavailable the game cannot draw a thing — say so in words
+// instead of leaving a blank page behind a dead title screen.
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  if (!renderer.getContext()) throw new Error('WebGL context creation returned nothing');
+} catch (err) {
+  document.getElementById('webgl-error').style.display = 'flex';
+  document.getElementById('title-screen').style.display = 'none';
+  throw err;
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -182,6 +192,9 @@ const G = {
   currentAction: null,
   radio: null,
   sfx: null,
+  mapOpen: false,
+  debugOn: false,
+  lastError: null,
 };
 
 G.toast = (text, seconds = 3.6) => {
@@ -455,19 +468,103 @@ function updateCamera(dt) {
 }
 
 // --- The frame ------------------------------------------------------------------------------------
+//
+// The simulation runs on a fixed 60 Hz timestep fed by an accumulator:
+// however the display refreshes (or stutters), the world always advances
+// in identical 1/60 s steps, and a long hitch can never teleport anything
+// — at most five steps run per frame and any deeper backlog is dropped.
+// Rendering stays per-rAF. One-shot input flags are flushed after the
+// first step of a frame, so a press is consumed exactly once even when a
+// frame runs several steps.
 
+const STEP = 1 / 60;
+const MAX_STEPS = 5;
 const clock = new THREE.Clock();
+let accumulator = 0;
+let fpsSmooth = 60;
+let debugStampAt = 0;
+const debugEl = document.getElementById('debug-overlay');
+const reportedGuards = new Set();
 
-function frame() {
-  requestAnimationFrame(frame);
-  const dt = Math.min(clock.getDelta(), 0.08);
+// A subsystem that throws must not take the whole game down with it: log
+// the failure once (to the F3 overlay's error line and the console), then
+// let the remaining systems carry on without it this step.
+function guard(name, fn) {
+  try {
+    fn();
+  } catch (err) {
+    if (!reportedGuards.has(name)) {
+      reportedGuards.add(name);
+      G.lastError = name + ': ' + (err && err.message ? err.message : String(err));
+      console.warn('[guard]', G.lastError);
+    }
+  }
+}
+
+function nearestRoadPoint(x, z) {
+  return {
+    x: ROAD_X.reduce((a, b) => (Math.abs(b - x) < Math.abs(a - x) ? b : a)),
+    z: ROAD_Z.reduce((a, b) => (Math.abs(b - z) < Math.abs(a - z) ? b : a)),
+  };
+}
+
+// NaN must never propagate: a poisoned position would smear an entity
+// across the world and break every distance check downstream. Anything
+// non-finite is put back on the nearest road junction with its speed
+// zeroed; the player goes home to the start corner.
+function sanitizeEntity(e, fallback) {
+  if (!e || (Number.isFinite(e.x) && Number.isFinite(e.z))) return;
+  e.x = fallback.x;
+  e.z = fallback.z;
+  if ('speed' in e) e.speed = 0;
+  if (e.group) e.group.position.set(e.x, 0, e.z);
+}
+
+function sanitizeEntities() {
+  if (!Number.isFinite(G.player.x) || !Number.isFinite(G.player.z)) {
+    teleportPlayer(PLAYER_START.x, PLAYER_START.z);
+  }
+  for (const v of G.vehicles) sanitizeEntity(v, nearestRoadPoint(v.x || 0, v.z || 0));
+  for (const p of G.peds) sanitizeEntity(p, nearestRoadPoint(p.x || 0, p.z || 0));
+  for (const h of G.hostiles) sanitizeEntity(h, nearestRoadPoint(h.x || 0, h.z || 0));
+  if (G.targetPed) sanitizeEntity(G.targetPed, nearestRoadPoint(G.targetPed.x || 0, G.targetPed.z || 0));
+  for (const u of G.police.units) sanitizeEntity(u, nearestRoadPoint(u.x || 0, u.z || 0));
+}
+
+function setMapOpen(open) {
+  G.mapOpen = open;
+  showBigMap(G, open);
+}
+
+function setDebug(on) {
+  G.debugOn = on;
+  debugEl.style.display = on ? 'block' : 'none';
+}
+
+function updateDebugOverlay(now) {
+  if (!G.debugOn || now - debugStampAt < 250) return;
+  debugStampAt = now;
+  const traffic = G.vehicles.filter((v) => v.mode === 'traffic').length;
+  debugEl.textContent =
+    'FPS ' + Math.round(fpsSmooth) +
+    ' · draw calls ' + renderer.info.render.calls +
+    ' · traffic ' + traffic +
+    ' · peds ' + G.peds.length +
+    ' · police ' + G.police.units.length +
+    ' · hostiles ' + G.hostiles.length +
+    '\nlast error: ' + (G.lastError || 'none');
+}
+
+function simStep(dt) {
   G.elapsed += dt;
   if (input.anyGesture) G.inputSeen = true;
 
+  if (input.debugPressed) setDebug(!G.debugOn);
   if (input.pausePressed) {
     if (G.mode === 'playing') setPaused(true);
     else if (G.mode === 'paused') setPaused(false);
   }
+  if (input.mapPressed && G.mode === 'playing' && !G.mapOpen) setMapOpen(true);
 
   if (G.mode === 'playing') {
     if (G.respawnAt && G.elapsed >= G.respawnAt.time) doRespawn();
@@ -521,14 +618,15 @@ function frame() {
     updateAim();
     if (input.mouseDown && !locked && !G.job.dialogue) playerShoot(G);
 
-    updateTraffic(G.vehicles, dt, playerPos(G.player));
-    updatePedestrians(G, dt);
-    updateChaseTarget(G, dt);
-    updateHostiles(G, dt);
-    updateCombat(G, dt);
-    if (!G.respawnAt) updatePolice(G, dt);
-    updateJobs(G, dt);
-    updateActivities(G, dt);
+    guard('traffic', () => updateTraffic(G.vehicles, dt, playerPos(G.player)));
+    guard('pedestrians', () => updatePedestrians(G, dt));
+    guard('chase target', () => updateChaseTarget(G, dt));
+    guard('hostiles', () => updateHostiles(G, dt));
+    guard('combat', () => updateCombat(G, dt));
+    if (!G.respawnAt) guard('police', () => updatePolice(G, dt));
+    guard('jobs', () => updateJobs(G, dt));
+    guard('activities', () => updateActivities(G, dt));
+    sanitizeEntities();
     G.hudFlash = Math.max(0, G.hudFlash - dt * 1.7);
   }
 
@@ -536,8 +634,39 @@ function frame() {
   updateRadio(G, dt);
   updateCamera(dt);
   updateHud(G);
+}
+
+function frame() {
+  requestAnimationFrame(frame);
+  const rawDt = Math.min(clock.getDelta(), 0.25);
+  if (rawDt > 0) fpsSmooth += (1 / Math.max(rawDt, 0.001) - fpsSmooth) * 0.05;
+
+  // With the full-screen map up, the world holds still: M or Esc closes it.
+  if (G.mapOpen) {
+    if (input.mapPressed || input.pausePressed) setMapOpen(false);
+    flushInput();
+    drawBigMap(G);
+    composer.render();
+    updateDebugOverlay(performance.now());
+    return;
+  }
+
+  if (!document.hidden) {
+    accumulator += rawDt;
+    let steps = 0;
+    while (accumulator >= STEP && steps < MAX_STEPS) {
+      simStep(STEP);
+      accumulator -= STEP;
+      steps++;
+      if (steps === 1) flushInput(); // one-shots live for exactly one step
+      if (G.mapOpen) break; // the step just opened the map: stop stepping
+    }
+    if (steps === MAX_STEPS) accumulator = 0; // drop backlog, never spiral
+    // steps === 0 (a display refreshing faster than 60 Hz): leave the
+    // one-shot flags alone — the next frame's step will consume them.
+  }
   composer.render();
-  flushInput();
+  updateDebugOverlay(performance.now());
 }
 
 window.addEventListener('resize', () => {
@@ -592,6 +721,9 @@ window.GH = {
       dialogueOpen: !!G.job.dialogue,
       banner: G.banner && G.elapsed < G.banner.until ? G.banner.title : null,
       prompt: G.prompt,
+      mapOpen: G.mapOpen,
+      debugOn: G.debugOn,
+      lastError: G.lastError,
     };
   },
   newGame() {

@@ -15,6 +15,24 @@
 
 <div id="vignette"></div>
 
+<!-- Shown only if WebGL context creation fails (see main.js) -->
+<div id="webgl-error" style="display:none">
+  <div>
+    <h1>Golden Hour needs WebGL</h1>
+    <p>Your browser could not create a WebGL context, so the city cannot be drawn.
+    Try a recent desktop Chrome with hardware acceleration enabled, then reload.</p>
+  </div>
+</div>
+
+<!-- F3 debug overlay (toggled in main.js) -->
+<div id="debug-overlay" style="display:none"></div>
+
+<!-- Full-screen map (M) -->
+<div id="bigmap" style="display:none">
+  <canvas id="bigmap-canvas" width="960" height="760"></canvas>
+  <div id="bigmap-hint">COSTA VERA — M or Esc to close</div>
+</div>
+
 <!-- In-game HUD -->
 <div id="hud" style="display:none">
   <div id="objective-panel">
@@ -75,6 +93,7 @@
       <span><b>Mouse</b> aim · <b>Click</b> fire pistol</span>
       <span><b>Shift</b> sprint</span>
       <span><b>R</b> radio (in a car)</span>
+      <span><b>M</b> map</span>
       <span><b>Esc</b> pause &amp; save</span>
     </div>
     <div id="title-note">An open-world crime game in your browser. Steal cars, run jobs, mind the stars.</div>

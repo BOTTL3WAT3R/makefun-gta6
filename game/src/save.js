@@ -37,7 +37,12 @@ export function saveGame(G) {
 export function loadSave() {
   try {
     const raw = window.localStorage.getItem(SAVE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    // A corrupt or foreign-version save is no save at all: Continue falls
+    // back to a fresh game instead of applying nonsense field by field.
+    if (!data || typeof data !== 'object' || data.version !== 1) return null;
+    return data;
   } catch (err) {
     return null;
   }

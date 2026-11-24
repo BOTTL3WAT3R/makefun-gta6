@@ -13,6 +13,8 @@ export const input = {
   interactPressed: false, // E pressed this frame
   radioPressed: false, // R pressed this frame
   pausePressed: false, // Esc pressed this frame
+  mapPressed: false, // M pressed this frame (full-screen map)
+  debugPressed: false, // F3 pressed this frame (debug overlay)
   anyGesture: false, // first key/click, used to unlock WebAudio
   lastMouseMoveAt: 0, // when the aim last moved (performance.now clock)
 };
@@ -28,6 +30,11 @@ export function initInput(canvas) {
     if (INTERACT_CODES.includes(event.code)) input.interactPressed = true;
     if (RADIO_CODES.includes(event.code)) input.radioPressed = true;
     if (event.code === 'Escape') input.pausePressed = true;
+    if (event.code === 'KeyM') input.mapPressed = true;
+    if (event.code === 'F3') {
+      input.debugPressed = true;
+      event.preventDefault(); // keep the browser's find-again off the game
+    }
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
       event.preventDefault();
     }
@@ -35,9 +42,15 @@ export function initInput(canvas) {
   window.addEventListener('keyup', (event) => {
     input.keys.delete(event.code);
   });
-  window.addEventListener('blur', () => {
+  // Losing focus or hiding the tab must never leave a key held down: a
+  // stuck W after alt-tab would drive the car on its own forever.
+  const releaseAll = () => {
     input.keys.clear();
     input.mouseDown = false;
+  };
+  window.addEventListener('blur', releaseAll);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseAll();
   });
   canvas.addEventListener('mousemove', (event) => {
     input.mouseX = event.clientX;
@@ -63,6 +76,8 @@ export function flushInput() {
   input.interactPressed = false;
   input.radioPressed = false;
   input.pausePressed = false;
+  input.mapPressed = false;
+  input.debugPressed = false;
 }
 
 export function moveAxes() {

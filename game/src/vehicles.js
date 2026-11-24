@@ -107,6 +107,8 @@ export function makeVehicle(type, colorHex, x, z, heading, mode) {
     targetZ: z,
     cruiseSpeed: 13 + Math.random() * 4,
     stuckTime: 0,
+    lastX: x,
+    lastZ: z,
   };
 }
 
@@ -209,9 +211,18 @@ export function spawnTraffic(scene, count) {
   const rng = makeRng(9911);
   const types = ['compact', 'sedan', 'sedan', 'pickup', 'van', 'taxi'];
   const vehicles = [];
+  const used = new Set();
   for (let i = 0; i < count; i++) {
-    const ix = Math.floor(rng() * ROAD_X.length);
-    const iz = Math.floor(rng() * ROAD_Z.length);
+    // One car per junction: two cars spawning on the same crossing would
+    // sit inside each other until one happened to drive off.
+    let ix = Math.floor(rng() * ROAD_X.length);
+    let iz = Math.floor(rng() * ROAD_Z.length);
+    let guard = 0;
+    while (used.has(ix + ',' + iz) && guard++ < 12) {
+      ix = Math.floor(rng() * ROAD_X.length);
+      iz = Math.floor(rng() * ROAD_Z.length);
+    }
+    used.add(ix + ',' + iz);
     const type = pick(rng, types);
     const color = type === 'taxi' ? 0xf2b33c : pick(rng, VEHICLE_COLORS);
     const v = makeVehicle(type, color, ROAD_X[ix], ROAD_Z[iz], 0, 'traffic');
@@ -260,6 +271,28 @@ export function updateTraffic(vehicles, dt, playerPos) {
     if (surfaceAt(v.x, v.z) !== 'land') { // never wander onto the shore
       v.x = clamp(v.x, -470, 300);
       v.z = clamp(v.z, -470, 470);
+    }
+    // Stuck detection: ordered to cruise but barely covering ground (wedged
+    // on a corner, nose against a wall). First pick a fresh target; if it is
+    // still stuck a few seconds later and nobody is watching, put it back
+    // on the nearest junction, on the grid, facing along the street.
+    const moved = Math.hypot(v.x - v.lastX, v.z - v.lastZ);
+    v.lastX = v.x;
+    v.lastZ = v.z;
+    if (speed > 3 && moved < 0.04) {
+      v.stuckTime += dt;
+      if (v.stuckTime > 3) {
+        v.stuckTime = 0;
+        chooseTrafficTarget(v, trafficRng);
+        if (Math.hypot(playerPos.x - v.x, playerPos.z - v.z) > 60) {
+          v.x = ROAD_X.reduce((a, b) => (Math.abs(b - v.x) < Math.abs(a - v.x) ? b : a));
+          v.z = ROAD_Z.reduce((a, b) => (Math.abs(b - v.z) < Math.abs(a - v.z) ? b : a));
+          v.speed = 0;
+          chooseTrafficTarget(v, trafficRng);
+        }
+      }
+    } else {
+      v.stuckTime = Math.max(0, v.stuckTime - dt * 2);
     }
     v.group.position.set(v.x, 0, v.z);
     v.group.rotation.y = v.heading;

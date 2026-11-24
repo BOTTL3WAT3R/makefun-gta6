@@ -3,7 +3,7 @@
 // armed hostiles who guard the rough jobs.
 
 import * as THREE from '../three.module.min.js';
-import { PLACES } from './config.js';
+import { PLACES, PLAYER_START } from './config.js';
 import { clamp, headingTo, makeRng, pick, turnToward } from './util.js';
 import { resolveCollisions, surfaceAt } from './city.js';
 
@@ -105,6 +105,13 @@ export function spawnPedestrians(scene, count) {
     const x = -440 + rng() * 700;
     const z = -440 + rng() * 880;
     if (surfaceAt(x, z) !== 'land') continue;
+    // Never inside a building footprint and never on top of the player:
+    // if the collision solver would have to push the point out, or the
+    // point sits where the player starts, the spot is no good.
+    const probe = { x, z };
+    resolveCollisions(probe, 0.55);
+    if (probe.x !== x || probe.z !== z) continue;
+    if (Math.hypot(x - PLAYER_START.x, z - PLAYER_START.z) < 8) continue;
     const p = makePerson(x, z, rng() * Math.PI * 2, 'wander', pick(rng, SHIRTS));
     p.targetX = x + (rng() - 0.5) * 160;
     p.targetZ = z + (rng() - 0.5) * 160;
@@ -158,7 +165,11 @@ export function scarePedsNear(G, x, z, radius) {
 
 // A driver who has just been pulled out of their car and runs for it.
 export function spawnFleeingDriver(G, x, z) {
-  const p = makePerson(x, z, 0, 'flee', pick(pedRng, SHIRTS));
+  // The door-side spot can land inside a wall if the car was taken against
+  // one — push the spawn point clear before the driver appears.
+  const spot = { x, z };
+  resolveCollisions(spot, 0.55);
+  const p = makePerson(spot.x, spot.z, 0, 'flee', pick(pedRng, SHIRTS));
   p.timer = 6;
   G.scene.add(p.group);
   G.peds.push(p);
