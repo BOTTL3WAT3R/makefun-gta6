@@ -422,6 +422,47 @@ function buildSailboats(scene) {
   }
 }
 
+// A taco truck and an ice-cream cart parked on the sand by the pier root:
+// the story shot's camera looks straight at them from the boardwalk, so
+// the pier entrance reads as a place people actually eat and linger.
+function buildFoodTruck(scene) {
+  const cream = new THREE.MeshLambertMaterial({ color: 0xf5e9c8 });
+  const teal = new THREE.MeshLambertMaterial({ color: 0x2e9e8f });
+  const coral = new THREE.MeshLambertMaterial({ color: 0xe84a5f });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x2b2e33 });
+  const white = new THREE.MeshLambertMaterial({ color: 0xf5f2e8 });
+  // Truck body, long side facing the boardwalk camera (south face).
+  addBox(scene, 5.4, 2.3, 2.4, 330, 1.45, 82, cream, true);
+  // Teal roof stripe and cab.
+  addBox(scene, 5.45, 0.28, 2.45, 330, 2.68, 82, teal, false);
+  addBox(scene, 1.5, 1.9, 2.3, 333.4, 1.25, 82, teal, true);
+  addBox(scene, 1.0, 0.8, 2.0, 334.3, 1.9, 82, dark, false); // windshield band
+  // Serving hatch on the south face + striped awning over it.
+  addBox(scene, 3.0, 0.9, 0.12, 329.2, 1.7, 83.25, dark, false);
+  const awning = addBox(scene, 3.4, 0.08, 1.3, 329.2, 2.35, 83.7, coral, false);
+  awning.rotation.x = 0.35;
+  // Menu board beside the hatch.
+  addBox(scene, 0.9, 1.2, 0.08, 331.6, 1.5, 83.25, white, false);
+  // Wheels.
+  const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.3, 10);
+  for (const [wx, wz] of [[328.2, 80.9], [331.8, 80.9], [328.2, 83.1], [331.8, 83.1]]) {
+    const wheel = new THREE.Mesh(wheelGeo, dark);
+    wheel.rotation.x = Math.PI / 2;
+    wheel.position.set(wx, 0.42, wz);
+    scene.add(wheel);
+  }
+  // Ice-cream push-cart with a striped umbrella, just east of the truck.
+  addBox(scene, 1.1, 0.9, 0.7, 335, 0.75, 87, white, false);
+  addBox(scene, 1.15, 0.12, 0.75, 335, 1.25, 87, coral, false);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.8, 5), dark);
+  pole.position.set(335, 1.9, 87);
+  scene.add(pole);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(1.1, 0.5, 8),
+    new THREE.MeshLambertMaterial({ color: 0xf2b33c }));
+  shade.position.set(335, 2.95, 87);
+  scene.add(shade);
+}
+
 // Beach life on the sand east of the boardwalk: seeded colourful umbrellas
 // (a pole and a cone canopy, no collider — you can stroll between them) with
 // a towel laid out under most of them. Placement is all from the seeded rng.
@@ -524,6 +565,7 @@ export function buildCity(scene) {
   buildSpecials(scene);
   buildPierAndMarina(scene);
   buildSailboats(scene);
+  buildFoodTruck(scene);
   buildPalmsAndLamps(scene, rng);
   buildBeachLife(scene, rng);
   buildBoardwalkFurniture(scene, rng);
